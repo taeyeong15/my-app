@@ -94,7 +94,6 @@ export default function Layout({ children, title, subtitle }: LayoutProps) {
   const [user, setUser] = useState<User | null>(null);
   const [openMenus, setOpenMenus] = useState<{ [key: string]: boolean }>({});
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(false);
 
   useEffect(() => {
     const checkAuth = () => {
@@ -125,33 +124,6 @@ export default function Layout({ children, title, subtitle }: LayoutProps) {
     
     checkAuth();
   }, [router, pathname]);
-
-  // 다크모드 상태 관리
-  useEffect(() => {
-    const savedTheme = localStorage.getItem('theme');
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    
-    if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
-      setIsDarkMode(true);
-      document.documentElement.classList.add('dark');
-    } else {
-      setIsDarkMode(false);
-      document.documentElement.classList.remove('dark');
-    }
-  }, []);
-
-  const toggleDarkMode = () => {
-    const newDarkMode = !isDarkMode;
-    setIsDarkMode(newDarkMode);
-    
-    if (newDarkMode) {
-      document.documentElement.classList.add('dark');
-      localStorage.setItem('theme', 'dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      localStorage.setItem('theme', 'light');
-    }
-  };
 
   const findMenuForPath = (path: string) => {
     // 쿼리 파라미터 제거하여 기본 경로만 비교
@@ -215,59 +187,42 @@ export default function Layout({ children, title, subtitle }: LayoutProps) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
+    <div className="min-h-screen bg-gray-50">
       <AutoLogout />
       
       {/* 네비게이션 바 */}
-      <nav className="bg-white dark:bg-gray-800 shadow-lg sticky top-0 z-50 border-b border-gray-200 dark:border-gray-700 transition-colors duration-200">
+      <nav className="bg-white shadow-sm sticky top-0 z-50 border-b border-gray-200">
         <div className="max-w-full mx-auto px-4">
           <div className="flex justify-between h-16">
             <div className="flex items-center">
               <button
                 onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                className="p-2 rounded-lg text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors mr-4"
+                className="p-2 rounded-lg text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-colors mr-4"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
                 </svg>
               </button>
-              <h1 className="text-xl font-bold text-gray-900 dark:text-white">마케팅 캠페인 관리 시스템</h1>
+              <h1 className="text-xl font-bold text-gray-900">마케팅 캠페인 관리 시스템</h1>
             </div>
 
-            {/* 사용자 정보 및 다크모드 토글 */}
+            {/* 사용자 정보 */}
             <div className="flex items-center space-x-4">
-              {/* 다크모드 토글 버튼 */}
-              <button
-                onClick={toggleDarkMode}
-                className="p-2 rounded-lg text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                title={isDarkMode ? '라이트 모드로 전환' : '다크 모드로 전환'}
-              >
-                {isDarkMode ? (
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-                  </svg>
-                ) : (
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-                  </svg>
-                )}
-              </button>
-
               <div className="flex items-center gap-3">
                 <div className="relative">
                   <span className="h-8 w-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 text-white flex items-center justify-center font-medium text-sm">
                     {user.name?.[0]?.toUpperCase()}
                   </span>
-                  <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-400 border-2 border-white dark:border-gray-800 rounded-full"></div>
+                  <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-400 border-2 border-white rounded-full"></div>
                 </div>
                 <div className="flex flex-col">
-                  <span className="text-sm font-medium text-gray-900 dark:text-white">{user.name}</span>
-                  <span className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">{user.role}</span>
+                  <span className="text-sm font-medium text-gray-900">{user.name}</span>
+                  <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">{user.role}</span>
                 </div>
               </div>
               <button
                 onClick={handleLogout}
-                className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
               >
                 <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -282,7 +237,7 @@ export default function Layout({ children, title, subtitle }: LayoutProps) {
       {/* 메인 레이아웃 */}
       <div className="flex">
         {/* 사이드바 */}
-        <div className={`${sidebarCollapsed ? 'w-16' : 'w-64'} bg-slate-50 dark:bg-gray-800 shadow-lg border-r border-gray-200 dark:border-gray-700 transition-all duration-300`}>
+        <div className={`${sidebarCollapsed ? 'w-16' : 'w-64'} bg-white shadow-sm border-r border-gray-200 transition-all duration-300`}>
           <div className="h-full overflow-y-auto">
             <div className="p-4">
               <nav className="space-y-2">
@@ -294,8 +249,8 @@ export default function Layout({ children, title, subtitle }: LayoutProps) {
                           onClick={() => toggleMenu(item.title)}
                           className={`w-full flex items-center justify-between px-3 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 group ${
                             isParentMenuActive(item)
-                              ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700'
-                              : 'text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700'
+                              ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                              : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
                           }`}
                         >
                           <div className="flex items-center">
@@ -314,15 +269,15 @@ export default function Layout({ children, title, subtitle }: LayoutProps) {
                           )}
                         </button>
                         {openMenus[item.title] && !sidebarCollapsed && (
-                          <div className="ml-6 mt-2 space-y-1 pl-6 border-l-2 border-gray-200 dark:border-gray-600">
+                          <div className="ml-6 mt-2 space-y-1 pl-6 border-l-2 border-gray-100">
                             {item.children.map((child) => (
                               <Link
                                 key={child.title}
                                 href={child.path || '#'}
                                 className={`block px-3 py-2 text-sm rounded-lg transition-all duration-200 ${
                                   isMenuActive(child.path)
-                                    ? 'bg-blue-600 dark:bg-blue-700 text-white shadow-md'
-                                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700'
+                                    ? 'bg-blue-600 text-white shadow-md'
+                                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                                 }`}
                               >
                                 {child.title}
@@ -336,8 +291,8 @@ export default function Layout({ children, title, subtitle }: LayoutProps) {
                         href={item.path || '#'}
                         className={`flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 ${
                           isMenuActive(item.path)
-                            ? 'bg-blue-600 dark:bg-blue-700 text-white shadow-md'
-                            : 'text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700'
+                            ? 'bg-blue-600 text-white shadow-md'
+                            : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
                         }`}
                       >
                         <span className="text-lg mr-3">{item.icon}</span>
@@ -354,14 +309,14 @@ export default function Layout({ children, title, subtitle }: LayoutProps) {
         {/* 메인 컨텐츠 */}
         <div className="flex-1">
           {title && (
-            <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 transition-colors duration-200">
+            <div className="bg-white border-b border-gray-200 px-6 py-4">
               <div className="max-w-full mx-auto">
-                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">{title}</h2>
-                {subtitle && <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{subtitle}</p>}
+                <h2 className="text-2xl font-bold text-gray-900">{title}</h2>
+                {subtitle && <p className="text-sm text-gray-600 mt-1">{subtitle}</p>}
               </div>
             </div>
           )}
-          <main className="flex-1 bg-gray-50 dark:bg-gray-900 transition-colors duration-200">
+          <main className="flex-1">
             {children}
           </main>
         </div>
