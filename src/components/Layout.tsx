@@ -219,7 +219,7 @@ export default function Layout({ children, title, subtitle }: LayoutProps) {
       <AutoLogout />
       
       {/* 네비게이션 바 */}
-      <nav className="bg-white dark:bg-gray-800 shadow-lg sticky top-0 z-50 border-b border-gray-200 dark:border-gray-700 transition-colors duration-200">
+      <nav className="bg-white dark:bg-gray-800 sticky top-0 z-50 border-b border-gray-200 dark:border-gray-700 transition-colors duration-200">
         <div className="max-w-full mx-auto px-4">
           <div className="flex justify-between h-16">
             <div className="flex items-center">
@@ -282,8 +282,8 @@ export default function Layout({ children, title, subtitle }: LayoutProps) {
       {/* 메인 레이아웃 */}
       <div className="flex">
         {/* 사이드바 */}
-        <div className={`${sidebarCollapsed ? 'w-16' : 'w-64'} bg-slate-50 dark:bg-gray-800 shadow-lg border-r border-gray-200 dark:border-gray-700 transition-all duration-300`}>
-          <div className="h-full overflow-y-auto">
+        <div className={`${sidebarCollapsed ? 'w-16' : 'w-64'} bg-slate-50 dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transition-all duration-300`}>
+          <div className={`${sidebarCollapsed ? 'h-screen overflow-hidden' : 'h-full overflow-y-auto'}`}>
             <div className="p-4">
               <nav className="space-y-2">
                 {menuItems.map((item) => (
@@ -292,14 +292,14 @@ export default function Layout({ children, title, subtitle }: LayoutProps) {
                       <div>
                         <button
                           onClick={() => toggleMenu(item.title)}
-                          className={`w-full flex items-center justify-between px-3 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 group ${
+                          className={`w-full flex items-center justify-between ${sidebarCollapsed ? 'px-2 py-2' : 'px-3 py-2.5'} text-sm font-medium rounded-lg transition-all duration-200 group ${
                             isParentMenuActive(item)
                               ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700'
                               : 'text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700'
                           }`}
                         >
                           <div className="flex items-center">
-                            <span className="text-lg mr-3">{item.icon}</span>
+                            <span className={`text-lg ${sidebarCollapsed ? 'mr-0' : 'mr-3'}`}>{item.icon}</span>
                             {!sidebarCollapsed && <span>{item.title}</span>}
                           </div>
                           {!sidebarCollapsed && (
@@ -334,13 +334,13 @@ export default function Layout({ children, title, subtitle }: LayoutProps) {
                     ) : (
                       <Link
                         href={item.path || '#'}
-                        className={`flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 ${
+                        className={`flex items-center ${sidebarCollapsed ? 'px-2 py-2 justify-center' : 'px-3 py-2.5'} text-sm font-medium rounded-lg transition-all duration-200 ${
                           isMenuActive(item.path)
                             ? 'bg-blue-600 dark:bg-blue-700 text-white shadow-md'
                             : 'text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700'
                         }`}
                       >
-                        <span className="text-lg mr-3">{item.icon}</span>
+                        <span className={`text-lg ${sidebarCollapsed ? 'mr-0' : 'mr-3'}`}>{item.icon}</span>
                         {!sidebarCollapsed && <span>{item.title}</span>}
                       </Link>
                     )}
