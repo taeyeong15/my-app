@@ -1,0 +1,9 @@
+{"email":"moon_taeyoung@eland.co.kr","level":"info","message":"로그인 시도","service":"user-service","timestamp":"2025-06-04 08:14:26"}
+{"email":"moon_taeyoung@eland.co.kr","level":"info","message":"로그인 성공","service":"user-service","timestamp":"2025-06-04 08:14:27","userId":5}
+{"level":"info","message":"로그아웃 시도","service":"user-service","timestamp":"2025-06-04 08:14:42"}
+{"level":"info","message":"로그아웃 성공","service":"user-service","timestamp":"2025-06-04 08:14:42"}
+{"email":"test14@example.com","level":"info","message":"비밀번호 재설정 요청 접수","service":"user-service","timestamp":"2025-06-04 08:14:50","userId":21}
+{"email":"test16@example.com","level":"info","message":"회원가입 성공","service":"user-service","timestamp":"2025-06-04 14:14:09","userId":23}
+{"email":"test16@example.com","level":"info","message":"비밀번호 재설정 요청 접수","service":"user-service","timestamp":"2025-06-04 14:14:34","userId":23}
+{"email":"test17@example.com","level":"info","message":"회원가입 성공","service":"user-service","timestamp":"2025-06-04 14:52:26","userId":24}
+{"email":"test16@example.com","level":"info","message":"비밀번호 재설정 요청 접수","service":"user-service","timestamp":"2025-06-04 14:52:32","userId":23}
