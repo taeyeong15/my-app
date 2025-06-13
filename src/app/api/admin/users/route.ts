@@ -1,18 +1,8 @@
-import { NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import mysql from 'mysql2/promise';
+import { NextRequest, NextResponse } from 'next/server';
+import bcrypt from 'bcryptjs';
+import { pool } from '@/lib/database';
 import { verifySession } from '@/lib/session';
 import { logger } from '@/lib/logger';
-
-const pool = mysql.createPool({
-  host: 'localhost',
-  user: 'root',
-  password: 'ansxodud2410!',
-  database: 'auth_db',
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
-});
 
 export async function GET() {
   try {

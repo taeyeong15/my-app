@@ -1,17 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import mysql from 'mysql2/promise';
 import { dbLogger } from '@/lib/logger';
-
-const pool = mysql.createPool({
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'auth_db',
-  port: parseInt(process.env.DB_PORT || '3306'),
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
-});
+import { pool } from '@/lib/database';
 
 // GET: 캠페인 이력 조회
 export async function GET(request: NextRequest) {
@@ -20,6 +9,8 @@ export async function GET(request: NextRequest) {
   const limit = parseInt(searchParams.get('limit') || '20');
   const campaignId = searchParams.get('campaign_id');
   const actionType = searchParams.get('action_type');
+  const search = searchParams.get('search');
+  const dateRange = searchParams.get('date_range');
   const offset = (page - 1) * limit;
 
   try {

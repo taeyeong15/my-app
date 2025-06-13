@@ -38,7 +38,7 @@ export default function ScriptsPage() {
       const data = await response.json();
 
       if (response.ok) {
-        setScripts(data.scripts || []);
+        setScripts(data.data || []);
       } else {
         throw new Error(data.error || '스크립트를 불러오는데 실패했습니다.');
       }

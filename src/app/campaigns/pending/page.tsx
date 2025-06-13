@@ -52,12 +52,18 @@ export default function PendingCampaignsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [pagination, setPagination] = useState<Pagination>({
     page: 1,
-    limit: 10,
+    limit: 5,
     totalCount: 0,
     totalPages: 0,
     hasNext: false,
     hasPrev: false
   });
+
+  // 반려 모달 상태 추가
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [selectedCampaignId, setSelectedCampaignId] = useState<number | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -80,6 +86,12 @@ export default function PendingCampaignsPage() {
     
     checkAuth();
   }, [router]);
+
+  useEffect(() => {
+    if (user) {
+      loadCampaigns();
+    }
+  }, [pagination.page, pagination.limit]);
 
   const loadCampaigns = async () => {
     try {
@@ -123,6 +135,7 @@ export default function PendingCampaignsPage() {
     if (!confirm('이 캠페인을 승인하시겠습니까?')) return;
 
     try {
+      setIsProcessing(true);
       const response = await fetch('/api/pending-campaigns', {
         method: 'PUT',
         headers: {
@@ -130,8 +143,9 @@ export default function PendingCampaignsPage() {
         },
         body: JSON.stringify({
           id: campaignId,
-          approval_status: 'approved',
-          approver: user?.email || 'admin'
+          status: 'APPROVED', // API에서 기대하는 파라미터명 사용
+          approver_id: user?.id, // 사용자 ID 전송
+          approval_comment: '승인 처리됨'
         }),
       });
 
@@ -139,31 +153,49 @@ export default function PendingCampaignsPage() {
       
       if (data.success) {
         alert('캠페인이 승인되었습니다.');
-        await loadCampaigns(); // 목록 새로고침
+        await loadCampaigns();
       } else {
         throw new Error(data.error || '승인 처리에 실패했습니다.');
       }
     } catch (error: any) {
       console.error('승인 처리 오류:', error);
       alert('승인 처리 중 오류가 발생했습니다: ' + error.message);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
-  const handleReject = async (campaignId: number) => {
-    const reason = prompt('반려 사유를 입력해주세요:');
-    if (!reason) return;
+  const handleReject = (campaignId: number) => {
+    setSelectedCampaignId(campaignId);
+    setRejectReason('');
+    setShowRejectModal(true);
+  };
+
+  const handleRejectSubmit = async () => {
+    if (!rejectReason.trim()) {
+      alert('반려 사유를 입력해주세요.');
+      return;
+    }
+
+    if (rejectReason.trim().length < 10) {
+      alert('반려 사유를 최소 10자 이상 입력해주세요.');
+      return;
+    }
+
+    if (!selectedCampaignId) return;
 
     try {
+      setIsProcessing(true);
       const response = await fetch('/api/pending-campaigns', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          id: campaignId,
-          approval_status: 'rejected',
-          approver: user?.email || 'admin',
-          rejection_reason: reason
+          id: selectedCampaignId,
+          status: 'REJECTED', // API에서 기대하는 파라미터명 사용
+          approver_id: user?.id, // 사용자 ID 전송
+          approval_comment: rejectReason
         }),
       });
 
@@ -171,14 +203,25 @@ export default function PendingCampaignsPage() {
       
       if (data.success) {
         alert('캠페인이 반려되었습니다.');
-        await loadCampaigns(); // 목록 새로고침
+        setShowRejectModal(false);
+        setSelectedCampaignId(null);
+        setRejectReason('');
+        await loadCampaigns();
       } else {
         throw new Error(data.error || '반려 처리에 실패했습니다.');
       }
     } catch (error: any) {
       console.error('반려 처리 오류:', error);
       alert('반려 처리 중 오류가 발생했습니다: ' + error.message);
+    } finally {
+      setIsProcessing(false);
     }
+  };
+
+  const handleRejectCancel = () => {
+    setShowRejectModal(false);
+    setSelectedCampaignId(null);
+    setRejectReason('');
   };
 
   const handlePageChange = (newPage: number) => {
@@ -328,8 +371,8 @@ export default function PendingCampaignsPage() {
           </div>
         </div>
 
-        {/* 승인대기 목록 */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        {/* 캠페인 목록 */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200">
           <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold text-gray-900">
@@ -464,15 +507,17 @@ export default function PendingCampaignsPage() {
                           </Link>
                           <button
                             onClick={() => handleApprove(campaign.id)}
-                            className="inline-flex items-center px-3 py-1 bg-green-600 text-white text-xs font-medium rounded hover:bg-green-700 transition-colors"
+                            disabled={isProcessing}
+                            className="inline-flex items-center px-3 py-1 bg-green-600 text-white text-xs font-medium rounded hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            승인
+                            {isProcessing ? '처리중...' : '승인'}
                           </button>
                           <button
                             onClick={() => handleReject(campaign.id)}
-                            className="inline-flex items-center px-3 py-1 bg-red-600 text-white text-xs font-medium rounded hover:bg-red-700 transition-colors"
+                            disabled={isProcessing}
+                            className="inline-flex items-center px-3 py-1 bg-red-600 text-white text-xs font-medium rounded hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            반려
+                            {isProcessing ? '처리중...' : '반려'}
                           </button>
                         </div>
                       </td>
@@ -527,6 +572,51 @@ export default function PendingCampaignsPage() {
           )}
         </div>
       </div>
+
+      {/* 반려 모달 */}
+      {showRejectModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full mx-4">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900">캠페인 반려</h3>
+              <p className="text-sm text-gray-600 mt-1">반려 사유를 입력해주세요.</p>
+            </div>
+            
+            <div className="px-6 py-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                반려 사유 <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder="반려 사유를 상세히 입력해주세요..."
+                rows={4}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 resize-none"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                최소 10자 이상 입력해주세요. (현재: {rejectReason.length}자)
+              </p>
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end space-x-3">
+              <button
+                onClick={handleRejectCancel}
+                disabled={isProcessing}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                취소
+              </button>
+              <button
+                onClick={handleRejectSubmit}
+                disabled={isProcessing || rejectReason.trim().length < 10}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isProcessing ? '처리 중...' : '반려 처리'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 } 

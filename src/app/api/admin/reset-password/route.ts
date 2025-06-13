@@ -1,16 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import mysql from 'mysql2/promise';
 import bcrypt from 'bcryptjs';
-
-const pool = mysql.createPool({
-  host: 'localhost',
-  user: 'root',
-  password: 'ansxodud2410!',
-  database: 'auth_db',
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
-});
+import { pool } from '@/lib/database';
 
 export async function POST(request: NextRequest) {
   try {

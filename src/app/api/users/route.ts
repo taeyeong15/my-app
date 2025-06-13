@@ -1,16 +1,7 @@
-import { NextResponse } from 'next/server';
-import mysql from 'mysql2/promise';
+import { NextRequest, NextResponse } from 'next/server';
+import { pool } from '@/lib/database';
 
-const pool = mysql.createPool({
-  host: 'localhost',
-  user: 'root',
-  password: 'ansxodud2410!',
-  database: 'auth_db',
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
-});
-
+// GET: 사용자 목록 조회
 export async function GET() {
   try {
     const [rows] = await pool.execute(`

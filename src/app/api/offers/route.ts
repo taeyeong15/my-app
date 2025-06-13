@@ -1,15 +1,5 @@
-import { NextResponse } from 'next/server';
-import mysql from 'mysql2/promise';
-
-const pool = mysql.createPool({
-  host: 'localhost',
-  user: 'root',
-  password: 'ansxodud2410!',
-  database: 'auth_db',
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0,
-});
+import { NextRequest, NextResponse } from 'next/server';
+import { pool } from '@/lib/database';
 
 export async function GET() {
   try {

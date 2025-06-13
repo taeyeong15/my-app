@@ -199,20 +199,11 @@ export default function Layout({ children, title, subtitle }: LayoutProps) {
     }
   };
 
-  const toggleMenu = (menuTitle: string, item: MenuItem) => {
-    // 메뉴 펼치기/접기
+  const toggleMenu = (menuTitle: string) => {
     setOpenMenus(prev => ({
       ...prev,
       [menuTitle]: !prev[menuTitle]
     }));
-
-    // 하위 메뉴가 있고, 현재 메뉴가 닫혀있다면 첫 번째 하위 메뉴로 이동
-    if (item.children && item.children.length > 0 && !openMenus[menuTitle]) {
-      const firstChildPath = item.children[0].path;
-      if (firstChildPath) {
-        router.push(firstChildPath);
-      }
-    }
   };
 
   if (!user) {
@@ -300,7 +291,7 @@ export default function Layout({ children, title, subtitle }: LayoutProps) {
                     {item.children ? (
                       <div>
                         <button
-                          onClick={() => toggleMenu(item.title, item)}
+                          onClick={() => toggleMenu(item.title)}
                           className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'justify-between px-3 py-2.5'} text-sm font-medium rounded-lg transition-all duration-200 group ${
                             isParentMenuActive(item)
                               ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700'

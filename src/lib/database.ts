@@ -1,5 +1,10 @@
 import mysql from 'mysql2/promise';
 
+// Next.js 개발 모드에서 Hot Reload로 인한 중복 인스턴스 생성 방지
+declare global {
+  var __db: DatabaseManager | undefined;
+}
+
 // 싱글톤 패턴으로 DB 연결 풀 관리
 class DatabaseManager {
   private static instance: DatabaseManager;
@@ -13,19 +18,26 @@ class DatabaseManager {
       database: process.env.DB_NAME || 'auth_db',
       port: parseInt(process.env.DB_PORT || '3306'),
       waitForConnections: true,
-      connectionLimit: 50, // 연결 제한 증가
-      queueLimit: 10, // 큐 제한 설정
-      enableKeepAlive: true, // 연결 유지 활성화
-      keepAliveInitialDelay: 10000, // 10초마다 keepalive
-      idleTimeout: 60000, // 1분 후 미사용 연결 종료
+      connectionLimit: 5, // 개발 환경에서는 더 적은 연결 사용
+      queueLimit: 0,
+      acquireTimeout: 60000,
+      timeout: 60000,
+      enableKeepAlive: true,
+      keepAliveInitialDelay: 0,
+      idleTimeout: 30000,
     });
 
-    // 연결 풀 이벤트 리스너
-    this.pool.on('connection', (connection: any) => {
-      console.log('새 DB 연결 생성:', connection.threadId);
-    });
+    // 연결 풀 이벤트 리스너 (개발 모드에서만)
+    if (process.env.NODE_ENV === 'development') {
+      this.pool.on('connection', (connection: any) => {
+        console.log('새 DB 연결 생성:', connection.threadId);
+      });
 
-    // @ts-ignore - mysql2 타입 정의 문제로 임시 무시
+      this.pool.on('release', (connection: any) => {
+        console.log('DB 연결 반환:', connection.threadId);
+      });
+    }
+
     this.pool.on('error', (err: any) => {
       console.error('DB 연결 풀 오류:', err);
       if (err.code === 'PROTOCOL_CONNECTION_LOST') {
@@ -33,16 +45,25 @@ class DatabaseManager {
       }
     });
 
-    // 주기적으로 연결 상태 확인
-    setInterval(() => {
-      this.pool.query('SELECT 1')
-        .catch(err => {
-          console.error('DB 연결 상태 확인 중 오류:', err);
-        });
-    }, 30000); // 30초마다 확인
+    // 주기적인 연결 상태 확인 제거 (불필요한 연결 생성 방지)
+    // setInterval(() => {
+    //   this.pool.query('SELECT 1')
+    //     .catch(err => {
+    //       console.error('DB 연결 상태 확인 중 오류:', err);
+    //     });
+    // }, 30000);
   }
 
   public static getInstance(): DatabaseManager {
+    // 개발 모드에서 global 객체 사용하여 Hot Reload 문제 해결
+    if (process.env.NODE_ENV === 'development') {
+      if (!global.__db) {
+        global.__db = new DatabaseManager();
+      }
+      return global.__db;
+    }
+
+    // 프로덕션 모드에서는 기존 싱글톤 패턴 사용
     if (!DatabaseManager.instance) {
       DatabaseManager.instance = new DatabaseManager();
     }
@@ -55,11 +76,13 @@ class DatabaseManager {
 
   public async getConnection(): Promise<mysql.PoolConnection> {
     const connection = await this.pool.getConnection();
-    // 연결 타임아웃 설정
+    
+    // 연결 에러 핸들링
     connection.on('error', (err) => {
       console.error('DB 연결 오류:', err);
       connection.release();
     });
+    
     return connection;
   }
 

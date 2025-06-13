@@ -12,10 +12,19 @@ interface CustomerGroup {
   criteria: any;
   estimated_count: number;
   actual_count: number;
-  status: 'active' | 'inactive';
+  status: string;
   created_by: string;
   created_at: string;
   updated_at: string;
+}
+
+interface Pagination {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+  hasNext: boolean;
+  hasPrev: boolean;
 }
 
 export default function CustomerGroupsPage() {
@@ -25,19 +34,38 @@ export default function CustomerGroupsPage() {
   const [filterStatus, setFilterStatus] = useState('all');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [pagination, setPagination] = useState<Pagination>({
+    page: 1,
+    limit: 10,
+    total: 0,
+    totalPages: 0,
+    hasNext: false,
+    hasPrev: false
+  });
 
   useEffect(() => {
     fetchCustomerGroups();
-  }, []);
+  }, [pagination.page, pagination.limit, searchTerm, filterStatus]);
 
   const fetchCustomerGroups = async () => {
     try {
       setIsLoading(true);
-      const response = await fetch('/api/customer-groups');
+      setError('');
+      
+      const response = await fetch(
+        `/api/customer-groups?page=${pagination.page}&limit=${pagination.limit}&search=${searchTerm}&status=${filterStatus}`
+      );
       const data = await response.json();
 
-      if (response.ok) {
+      if (data.success) {
         setGroups(data.groups || []);
+        setPagination({
+          ...pagination,
+          total: data.pagination.total,
+          totalPages: data.pagination.totalPages,
+          hasNext: data.pagination.hasNext,
+          hasPrev: data.pagination.hasPrev
+        });
       } else {
         throw new Error(data.error || '고객군을 불러오는데 실패했습니다.');
       }
@@ -47,6 +75,14 @@ export default function CustomerGroupsPage() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handlePageChange = (newPage: number) => {
+    setPagination(prev => ({ ...prev, page: newPage }));
+  };
+
+  const handlePageSizeChange = (newSize: number) => {
+    setPagination(prev => ({ ...prev, limit: newSize, page: 1 }));
   };
 
   const getStatusBadge = (status: string) => {
@@ -66,13 +102,6 @@ export default function CustomerGroupsPage() {
       </span>
     );
   };
-
-  const filteredGroups = groups.filter(group => {
-    const matchesStatus = filterStatus === 'all' || group.status === filterStatus;
-    const matchesSearch = group.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         group.created_by.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesStatus && matchesSearch;
-  });
 
   if (isLoading) {
     return (
@@ -122,7 +151,7 @@ export default function CustomerGroupsPage() {
           {[
             { 
               label: '전체 고객군', 
-              value: groups.length, 
+              value: pagination.total, 
               color: 'text-blue-600',
               bg: 'bg-blue-50',
               icon: '👥'
@@ -190,7 +219,7 @@ export default function CustomerGroupsPage() {
                 <option value="inactive">비활성</option>
               </select>
             </div>
-            <div className="lg:w-auto">
+            <div className="w-full lg:w-auto">
               <Link
                 href="/customers/new"
                 className="inline-flex items-center px-6 py-3 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
@@ -209,21 +238,33 @@ export default function CustomerGroupsPage() {
           <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold text-gray-900">
-                고객군 목록 ({filteredGroups.length}개)
+                고객군 목록 ({pagination.total}개 중 {groups.length}개 표시)
               </h3>
-              <button
-                onClick={fetchCustomerGroups}
-                className="inline-flex items-center px-3 py-1 text-sm text-gray-600 hover:text-gray-800 transition-colors"
-              >
-                <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                새로고침
-              </button>
+              <div className="flex items-center space-x-3">
+                <select
+                  value={pagination.limit}
+                  onChange={(e) => handlePageSizeChange(Number(e.target.value))}
+                  className="px-3 py-1 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value={5}>5개씩</option>
+                  <option value={10}>10개씩</option>
+                  <option value={20}>20개씩</option>
+                  <option value={50}>50개씩</option>
+                </select>
+                <button
+                  onClick={fetchCustomerGroups}
+                  className="inline-flex items-center px-3 py-1 text-sm text-gray-600 hover:text-gray-800 transition-colors"
+                >
+                  <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  새로고침
+                </button>
+              </div>
             </div>
           </div>
 
-          {filteredGroups.length === 0 ? (
+          {groups.length === 0 ? (
             <div className="text-center py-16">
               <svg className="mx-auto h-16 w-16 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -236,7 +277,7 @@ export default function CustomerGroupsPage() {
                 }
               </p>
               <Link
-                href="/customer-groups/new"
+                href="/customers/new"
                 className="inline-flex items-center px-6 py-3 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
               >
                 + 새 고객군 만들기
@@ -268,7 +309,7 @@ export default function CustomerGroupsPage() {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredGroups.map((group) => (
+                  {groups.map((group) => (
                     <tr key={group.id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-6 py-4">
                         <div>
@@ -317,21 +358,12 @@ export default function CustomerGroupsPage() {
                           {new Date(group.updated_at).toLocaleDateString('ko-KR')}
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center space-x-3">
-                          <Link
-                            href={`/customer-groups/${group.id}`}
-                            className="text-blue-600 hover:text-blue-800 text-sm font-medium transition-colors"
-                          >
-                            상세보기
-                          </Link>
-                          <Link
-                            href={`/customer-groups/${group.id}/edit`}
-                            className="text-indigo-600 hover:text-indigo-800 text-sm font-medium transition-colors"
-                          >
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <div className="flex items-center space-x-2">
+                          <button className="text-blue-600 hover:text-blue-900 transition-colors">
                             수정
-                          </Link>
-                          <button className="text-red-600 hover:text-red-800 text-sm font-medium transition-colors">
+                          </button>
+                          <button className="text-red-600 hover:text-red-900 transition-colors">
                             삭제
                           </button>
                         </div>
@@ -340,6 +372,36 @@ export default function CustomerGroupsPage() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {/* 페이징 */}
+          {pagination.totalPages > 1 && (
+            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-gray-700">
+                  총 {pagination.total}개 중 {((pagination.page - 1) * pagination.limit) + 1}-{Math.min(pagination.page * pagination.limit, pagination.total)}개 표시
+                </div>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => handlePageChange(pagination.page - 1)}
+                    disabled={!pagination.hasPrev}
+                    className="px-3 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    이전
+                  </button>
+                  <span className="px-3 py-1 text-sm font-medium">
+                    {pagination.page} / {pagination.totalPages}
+                  </span>
+                  <button
+                    onClick={() => handlePageChange(pagination.page + 1)}
+                    disabled={!pagination.hasNext}
+                    className="px-3 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    다음
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>

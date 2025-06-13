@@ -35,7 +35,7 @@ export default function CampaignHistoryPage() {
   const [dateRange, setDateRange] = useState('all');
   const [pagination, setPagination] = useState<Pagination>({
     page: 1,
-    limit: 10,
+    limit: 5, // 10에서 5로 변경
     totalCount: 0,
     totalPages: 0,
     hasNext: false,
