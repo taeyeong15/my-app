@@ -292,25 +292,29 @@ export default function Layout({ children, title, subtitle }: LayoutProps) {
                       <div>
                         <button
                           onClick={() => toggleMenu(item.title)}
-                          className={`w-full flex items-center justify-between ${sidebarCollapsed ? 'px-2 py-2' : 'px-3 py-2.5'} text-sm font-medium rounded-lg transition-all duration-200 group ${
+                          className={`w-full flex items-center ${sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'justify-between px-3 py-2.5'} text-sm font-medium rounded-lg transition-all duration-200 group ${
                             isParentMenuActive(item)
                               ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-700'
                               : 'text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700'
                           }`}
                         >
-                          <div className="flex items-center">
-                            <span className={`text-lg ${sidebarCollapsed ? 'mr-0' : 'mr-3'}`}>{item.icon}</span>
-                            {!sidebarCollapsed && <span>{item.title}</span>}
-                          </div>
-                          {!sidebarCollapsed && (
-                            <svg
-                              className={`w-4 h-4 transition-transform duration-200 ${openMenus[item.title] ? 'rotate-90' : ''}`}
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-                            </svg>
+                          {sidebarCollapsed ? (
+                            <span className="text-lg">{item.icon}</span>
+                          ) : (
+                            <>
+                              <div className="flex items-center">
+                                <span className="text-lg mr-3">{item.icon}</span>
+                                <span>{item.title}</span>
+                              </div>
+                              <svg
+                                className={`w-4 h-4 transition-transform duration-200 ${openMenus[item.title] ? 'rotate-90' : ''}`}
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                              </svg>
+                            </>
                           )}
                         </button>
                         {openMenus[item.title] && !sidebarCollapsed && (
@@ -334,14 +338,20 @@ export default function Layout({ children, title, subtitle }: LayoutProps) {
                     ) : (
                       <Link
                         href={item.path || '#'}
-                        className={`flex items-center ${sidebarCollapsed ? 'px-2 py-2 justify-center' : 'px-3 py-2.5'} text-sm font-medium rounded-lg transition-all duration-200 ${
+                        className={`flex items-center ${sidebarCollapsed ? 'justify-center px-2 py-2.5' : 'px-3 py-2.5'} text-sm font-medium rounded-lg transition-all duration-200 ${
                           isMenuActive(item.path)
                             ? 'bg-blue-600 dark:bg-blue-700 text-white shadow-md'
                             : 'text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700'
                         }`}
                       >
-                        <span className={`text-lg ${sidebarCollapsed ? 'mr-0' : 'mr-3'}`}>{item.icon}</span>
-                        {!sidebarCollapsed && <span>{item.title}</span>}
+                        {sidebarCollapsed ? (
+                          <span className="text-lg">{item.icon}</span>
+                        ) : (
+                          <>
+                            <span className="text-lg mr-3">{item.icon}</span>
+                            <span>{item.title}</span>
+                          </>
+                        )}
                       </Link>
                     )}
                   </div>
