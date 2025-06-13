@@ -28,6 +28,12 @@ interface Pagination {
 
 export default function CampaignHistoryPage() {
   const [history, setHistory] = useState<CampaignHistory[]>([]);
+  const [statistics, setStatistics] = useState({
+    totalHistory: 0,
+    approvedCount: 0,
+    updatedCount: 0,
+    todayActivity: 0
+  });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');

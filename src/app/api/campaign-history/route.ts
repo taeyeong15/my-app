@@ -89,6 +89,12 @@ export async function GET(request: NextRequest) {
         totalPages: Math.ceil(total / limit),
         hasNext: page < Math.ceil(total / limit),
         hasPrev: page > 1
+      },
+      statistics: {
+        totalHistory: total,
+        approvedCount: 0,
+        updatedCount: 0,
+        todayActivity: 0
       }
     });
 
