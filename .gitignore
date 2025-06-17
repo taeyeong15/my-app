@@ -3,7 +3,7 @@
 # dependencies
 /node_modules
 /.pnp
-.pnp.*
+.pnp.js
 .yarn/*
 !.yarn/patches
 !.yarn/plugins
@@ -31,7 +31,9 @@ yarn-error.log*
 .pnpm-debug.log*
 
 # env files (can opt-in for committing if needed)
-.env*
+.env
+.env*.local
+.env.production
 
 # vercel
 .vercel
@@ -39,3 +41,63 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# 보안 관련 파일
+*.key
+*.crt
+*.p12
+*.pfx
+/ssl/private/
+/ssl/*.key
+
+# 데이터베이스 백업
+/backup/*.sql
+/backup/*.dump
+
+# 로그 파일
+/logs/*.log
+/logs/*.log.*
+
+# 업로드 파일
+/uploads/*
+!/uploads/.gitkeep
+
+# 임시 파일
+/tmp/
+*.tmp
+*.temp
+
+# IDE 설정
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS 생성 파일
+Thumbs.db
+.AppleDouble
+.LSOverride
+
+# Docker
+.dockerignore
+
+# 프로덕션 설정
+docker-compose.override.yml
+.env.docker
+
+# 패키지 관리
+*.tgz
+npm-shrinkwrap.json
+
+# 테스트 및 개발
+coverage/
+.nyc_output/
+junit.xml
+
+# 오프라인 패키지
+/dist/offline-packages/
+
+# 보안 점검 결과
+security-report.txt
+audit-report.json

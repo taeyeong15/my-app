@@ -1,9 +1,46 @@
 import mysql from 'mysql2/promise';
+import { getDecryptedEnvValue } from './crypto';
 
 // Next.js 개발 모드에서 Hot Reload로 인한 중복 인스턴스 생성 방지
 declare global {
   var __db: DatabaseManager | undefined;
 }
+
+// 환경별 데이터베이스 설정
+const getDbConfig = () => {
+  const env = process.env.NODE_ENV || 'development';
+  
+  const baseConfig = {
+    host: getDecryptedEnvValue('DB_HOST') || 'localhost',
+    user: getDecryptedEnvValue('DB_USER') || 'root',
+    password: getDecryptedEnvValue('DB_PASSWORD') || 'ansxodud2410!',
+    database: getDecryptedEnvValue('DB_NAME') || 'auth_db',
+    port: parseInt(getDecryptedEnvValue('DB_PORT') || '3306'),
+    waitForConnections: true,
+    connectionLimit: env === 'production' ? 20 : 5,
+    queueLimit: 0,
+    idleTimeout: 30000,
+    enableKeepAlive: true,
+    keepAliveInitialDelay: 0
+  };
+
+  // 환경별 추가 설정
+  if (env === 'production') {
+    const prodConfig: any = { ...baseConfig };
+    if (process.env.DB_SSL_ENABLED === 'true') {
+      prodConfig.ssl = { rejectUnauthorized: true };
+    }
+    return prodConfig;
+  } else if (env === 'test') {
+    return {
+      ...baseConfig,
+      database: getDecryptedEnvValue('DB_TEST_NAME') || 'campaign_db_test',
+      connectionLimit: 3
+    };
+  }
+
+  return baseConfig;
+};
 
 // 싱글톤 패턴으로 DB 연결 풀 관리
 class DatabaseManager {
@@ -11,21 +48,7 @@ class DatabaseManager {
   private pool: mysql.Pool;
 
   private constructor() {
-    this.pool = mysql.createPool({
-      host: process.env.DB_HOST || 'localhost',
-      user: process.env.DB_USER || 'root',
-      password: process.env.DB_PASSWORD || 'ansxodud2410!',
-      database: process.env.DB_NAME || 'auth_db',
-      port: parseInt(process.env.DB_PORT || '3306'),
-      waitForConnections: true,
-      connectionLimit: 5, // 개발 환경에서는 더 적은 연결 사용
-      queueLimit: 0,
-      acquireTimeout: 60000,
-      timeout: 60000,
-      enableKeepAlive: true,
-      keepAliveInitialDelay: 0,
-      idleTimeout: 30000,
-    });
+    this.pool = mysql.createPool(getDbConfig());
 
     // 연결 풀 이벤트 리스너 (개발 모드에서만)
     if (process.env.NODE_ENV === 'development') {

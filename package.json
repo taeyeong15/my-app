@@ -1,17 +1,37 @@
 {
   "name": "my-app",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:encrypted": "node scripts/encrypt-env.js && next dev",
     "build": "next build",
+    "build:dev": "next build",
+    "build:prod": "npm run lint && next build",
     "start": "next start",
-    "lint": "next lint"
+    "start:dev": "next start -p 3000",
+    "start:prod": "next start -p 3000",
+    "lint": "next lint",
+    "encrypt:env": "node scripts/encrypt-env.js",
+    "encrypt:dev": "node scripts/encrypt-env-auto.js dev",
+    "encrypt:prod": "node scripts/encrypt-env-auto.js prod",
+    "package:offline": "npm pack --pack-destination ./dist/offline-packages",
+    "security:audit": "npm audit --audit-level=moderate",
+    "security:check": "npm audit && npm outdated",
+    "db:schema": "mysql -u $DB_USER -p$DB_PASSWORD $DB_NAME < database/schema.sql",
+    "db:init": "mysql -u $DB_USER -p$DB_PASSWORD $DB_NAME < database/initial-data.sql",
+    "docker:build": "docker build -t campaign-system:latest .",
+    "docker:prod": "docker-compose -f docker-compose.prod.yml up -d",
+    "backup:db": "mysqldump -u $DB_USER -p$DB_PASSWORD $DB_NAME > backup/db-$(date +%Y%m%d_%H%M%S).sql",
+    "logs:clean": "find logs -name '*.log' -mtime +30 -delete",
+    "setup:dev": "copy env.development.template .env.development && echo 개발 환경 설정이 생성되었습니다. .env.development 파일을 수정하세요.",
+    "setup:prod": "copy env.production.template .env.production && echo 운영 환경 설정이 생성되었습니다. .env.production 파일을 수정하고 암호화하세요."
   },
   "dependencies": {
     "@firebase/auth": "^1.10.6",
     "@types/nodemailer": "^6.4.17",
     "bcryptjs": "^2.4.3",
+    "dotenv": "^16.5.0",
     "firebase": "^11.8.1",
     "jose": "^6.0.11",
     "jspdf": "^3.0.1",
@@ -37,5 +57,9 @@
     "postcss": "^8",
     "tailwindcss": "^3.3.0",
     "typescript": "^5"
+  },
+  "engines": {
+    "node": ">=18.17.0",
+    "npm": ">=9.0.0"
   }
 }
