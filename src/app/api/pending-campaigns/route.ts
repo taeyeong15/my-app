@@ -8,17 +8,39 @@ export async function GET(request: NextRequest) {
   const page = parseInt(searchParams.get('page') || '1');
   const limit = parseInt(searchParams.get('limit') || '10');
   const status = searchParams.get('status') || 'PENDING';
+  const search = searchParams.get('search') || '';
+  const priority = searchParams.get('priority') || '';
   const offset = (page - 1) * limit;
 
   let connection;
   try {
     connection = await db.getConnection();
 
+    // WHERE 조건 구성
+    let whereConditions = ['car.status = ?'];
+    let queryParams: any[] = [status];
+
+    if (search) {
+      whereConditions.push('(c.name LIKE ? OR c.description LIKE ? OR COALESCE(u1.name, u1.email) LIKE ?)');
+      queryParams.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    }
+
+    //priority 컬럼이 테이블에 없으므로 필터링 제거
+    if (priority && priority !== 'all') {
+      whereConditions.push('car.priority = ?');
+      queryParams.push(priority);
+    }
+
+    const whereClause = whereConditions.join(' AND ');
+
     // 총 개수 조회
-    const [countResult] = await connection.execute(
-      'SELECT COUNT(*) as total FROM campaign_approval_requests WHERE status = ?',
-      [status]
-    );
+    const [countResult] = await connection.execute(`
+      SELECT COUNT(*) as total 
+      FROM campaign_approval_requests car
+      LEFT JOIN campaigns c ON car.campaign_id = c.id
+      LEFT JOIN users u1 ON car.requester_id = u1.id
+      WHERE ${whereClause}
+    `, queryParams);
     const total = (countResult as any[])[0].total;
 
     // 데이터 조회 - campaign_approval_requests 테이블 기준
@@ -49,18 +71,41 @@ export async function GET(request: NextRequest) {
           WHEN c.type = 'mixed' THEN '통합'
           ELSE c.type
         END as type_label,
-        'normal' as priority,
-        '보통' as priority_label,
+        COALESCE(car.priority, 'normal') as priority,
+        CASE COALESCE(car.priority, 'normal')
+          WHEN 'urgent' THEN '긴급'
+          WHEN 'high' THEN '높음'
+          WHEN 'normal' THEN '보통'
+          WHEN 'low' THEN '낮음'
+          ELSE '보통'
+        END as priority_label,
         COALESCE(u1.name, u1.email, 'unknown') as requester,
         COALESCE(u2.name, u2.email, 'N/A') as approver
       FROM campaign_approval_requests car
       LEFT JOIN campaigns c ON car.campaign_id = c.id
       LEFT JOIN users u1 ON car.requester_id = u1.id
       LEFT JOIN users u2 ON car.approver_id = u2.id
-      WHERE car.status = ?
+      WHERE ${whereClause}
       ORDER BY car.created_at DESC
       LIMIT ${limit} OFFSET ${offset}
-    `, [status]);
+    `, queryParams);
+
+    // 전체 통계 조회 (검색 조건 적용, 페이징 무관)
+    const [allStatsRows] = await connection.execute(`
+      SELECT 
+        COUNT(*) as total_pending,
+        COUNT(CASE WHEN COALESCE(car.priority, 'normal') = 'urgent' THEN 1 END) as urgent_count,
+        COUNT(CASE WHEN COALESCE(car.priority, 'normal') = 'high' THEN 1 END) as high_count,
+        COUNT(CASE WHEN COALESCE(car.priority, 'normal') = 'normal' THEN 1 END) as normal_count,
+        COUNT(CASE WHEN COALESCE(car.priority, 'normal') = 'low' THEN 1 END) as low_count,
+        COALESCE(AVG(DATEDIFF(NOW(), car.created_at)), 0) as avg_waiting_days
+      FROM campaign_approval_requests car
+      LEFT JOIN campaigns c ON car.campaign_id = c.id
+      LEFT JOIN users u1 ON car.requester_id = u1.id
+      WHERE ${whereClause}
+    `, queryParams);
+
+    const allStats = (allStatsRows as any[])[0];
 
     await dbLogger.info('캠페인 승인대기 목록 조회', { 
       status, 
@@ -77,6 +122,14 @@ export async function GET(request: NextRequest) {
         limit,
         total,
         totalPages: Math.ceil(total / limit)
+      },
+      statistics: {
+        totalPending: allStats.total_pending || 0,
+        urgentCount: allStats.urgent_count || 0,
+        highCount: allStats.high_count || 0,
+        normalCount: allStats.normal_count || 0,
+        lowCount: allStats.low_count || 0,
+        avgWaitingDays: Math.round((allStats.avg_waiting_days || 0) * 10) / 10
       }
     });
 

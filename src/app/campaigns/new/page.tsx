@@ -94,8 +94,10 @@ export default function NewCampaignPage() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [campaignTypes, setCampaignTypes] = useState<any[]>([]);
   const [admins, setAdmins] = useState<Admin[]>([]);
+  const [priorities, setPriorities] = useState<any[]>([]);
   const [showApprovalModal, setShowApprovalModal] = useState(false);
   const [selectedAdmin, setSelectedAdmin] = useState<number | null>(null);
+  const [selectedPriority, setSelectedPriority] = useState<string>('normal');
   const [approvalMessage, setApprovalMessage] = useState('');
 
   const [formData, setFormData] = useState<CampaignFormData>({
@@ -190,14 +192,16 @@ export default function NewCampaignPage() {
         scriptsRes,
         channelsRes,
         typesRes,
-        adminsRes
+        adminsRes,
+        prioritiesRes
       ] = await Promise.all([
         fetch('/api/customer-groups'),
         fetch('/api/offers'),
         fetch('/api/scripts/simple'),
         fetch('/api/channels/simple'),
         fetch('/api/common-codes?category=CAMPAIGN&sub_category=TYPE'),
-        fetch('/api/campaigns/admins')
+        fetch('/api/campaigns/admins'),
+        fetch('/api/common-codes?category=CAMPAIGN&sub_category=PRIORITY')
       ]);
 
       const [
@@ -206,14 +210,16 @@ export default function NewCampaignPage() {
         scriptsData,
         channelsData,
         typesData,
-        adminsData
+        adminsData,
+        prioritiesData
       ] = await Promise.all([
         customerGroupsRes.json(),
         offersRes.json(),
         scriptsRes.json(),
         channelsRes.json(),
         typesRes.json(),
-        adminsRes.json()
+        adminsRes.json(),
+        prioritiesRes.json()
       ]);
 
       if (customerGroupsData.success) {
@@ -234,7 +240,7 @@ export default function NewCampaignPage() {
 
       if (channelsData.success) {        
         // 중복 제거를 위해 code를 기준으로 유니크한 데이터만 설정
-        const uniqueChannels = (channelsData.types || []).reduce((acc: Channel[], current: Channel) => {
+        const uniqueChannels = (channelsData.channels || []).reduce((acc: Channel[], current: Channel) => {
           const existingChannel = acc.find(item => item.code === current.code);
           if (!existingChannel) {
             acc.push(current);
@@ -243,6 +249,15 @@ export default function NewCampaignPage() {
         }, []);
         
         setChannels(uniqueChannels);
+      } else {
+        console.error('채널 API 오류:', channelsData.error);
+        // API 오류시 기본 채널 데이터 사용
+        setChannels([
+          { code: 'email', name: '이메일' },
+          { code: 'sms', name: 'SMS' },
+          { code: 'push', name: '푸시' },
+          { code: 'kakao', name: '카카오톡' }
+        ]);
       }
 
       if (typesData.success) {
@@ -251,6 +266,10 @@ export default function NewCampaignPage() {
 
       if (adminsData.success) {
         setAdmins(adminsData.admins || []);
+      }
+
+      if (prioritiesData.success) {
+        setPriorities(prioritiesData.codes || []);
       }
     } catch (error) {
       console.error('초기 데이터 로드 실패:', error);
@@ -481,7 +500,8 @@ export default function NewCampaignPage() {
           campaign_id: targetCampaignId,
           requester_id: user?.id,
           approver_id: selectedAdmin,
-          request_message: approvalMessage
+          request_message: approvalMessage,
+          priority: selectedPriority
         }),
       });
 
@@ -1186,6 +1206,33 @@ export default function NewCampaignPage() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
+                    우선순위 <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={selectedPriority}
+                    onChange={(e) => setSelectedPriority(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    required
+                  >
+                    {priorities.length > 0 ? (
+                      priorities.map((priority) => (
+                        <option key={priority.code} value={priority.code}>
+                          {priority.name}
+                        </option>
+                      ))
+                    ) : (
+                      <>
+                        <option value="urgent">긴급</option>
+                        <option value="high">높음</option>
+                        <option value="normal">보통</option>
+                        <option value="low">낮음</option>
+                      </>
+                    )}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
                     승인 요청 메시지 <span className="text-red-500">*</span>
                   </label>
                   <textarea
@@ -1205,6 +1252,7 @@ export default function NewCampaignPage() {
                   onClick={() => {
                     setShowApprovalModal(false);
                     setSelectedAdmin(null);
+                    setSelectedPriority('normal');
                     setApprovalMessage('');
                   }}
                   className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"

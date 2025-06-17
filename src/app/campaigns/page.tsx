@@ -49,13 +49,25 @@ interface ChannelOption {
   name: string;
 }
 
+interface StatusCounts {
+  totalCamp: number;
+  runningCamp: number;
+  approvalCamp: number;
+  completedCamp: number;
+}
+
 export default function CampaignsPage() {
   const router = useRouter();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [statusCodes, setStatusCodes] = useState<CommonCode[]>([]);
   const [typeCodes, setTypeCodes] = useState<CommonCode[]>([]);
   const [channelOptions, setChannelOptions] = useState<ChannelOption[]>([]);
-  const [statusCounts, setStatusCounts] = useState<{[key: string]: number}>({});
+  const [statusCounts, setStatusCounts] = useState<StatusCounts>({
+    totalCamp: 0,
+    runningCamp: 0,
+    approvalCamp: 0,
+    completedCamp: 0
+  });
   const [pagination, setPagination] = useState<Pagination>({
     page: 1,
     limit: 5,
@@ -81,12 +93,12 @@ export default function CampaignsPage() {
     fetchData();
   }, []);
 
-  // 페이징 또는 검색 조건 변경 시 데이터 재조회
+  // 페이징만 자동 재조회 (검색 조건은 검색 버튼으로만)
   useEffect(() => {
     if (!isLoading) { // 초기 로딩이 아닐 때만
       fetchCampaigns();
     }
-  }, [pagination.page, pageSize, searchTerm, filterStatus, filterType, filterChannel, startDate, endDate]);
+  }, [pagination.page, pageSize]);
 
   const fetchData = async () => {
     try {
@@ -142,7 +154,7 @@ export default function CampaignsPage() {
       const response = await fetch(`/api/campaigns?${params}`);
       const data = await response.json();
 
-      if (response.ok) {
+      if (data.success) {
         setCampaigns(data.data || []);
         setPagination({
           page: data.pagination.page,
@@ -152,7 +164,12 @@ export default function CampaignsPage() {
           hasNext: data.pagination.page < data.pagination.totalPages,
           hasPrev: data.pagination.page > 1
         });
-        setStatusCounts(data.statusCounts || {});
+        setStatusCounts(data.statusCounts || { 
+          totalCamp: 0,
+          runningCamp: 0,
+          approvalCamp: 0,
+          completedCamp: 0
+        });
       } else {
         throw new Error(data.error || '캠페인을 불러오는데 실패했습니다.');
       }
@@ -163,8 +180,46 @@ export default function CampaignsPage() {
   };
 
   const handleSearch = () => {
-    setPagination(prev => ({ ...prev, page: 1 }));
-    fetchCampaigns();
+    const newPagination = { ...pagination, page: 1 };
+    setPagination(newPagination);
+    
+    // 검색 시에는 명시적으로 1페이지로 설정하여 호출
+    const params = new URLSearchParams({
+      page: "1",
+      limit: pageSize.toString(),
+      search: searchTerm,
+      status: filterStatus,
+      type: filterType,
+      channel: filterChannel,
+      start_date: startDate,
+      end_date: endDate
+    });
+
+    fetch(`/api/campaigns?${params}`)
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          setCampaigns(data.data || []);
+          setPagination({
+            page: 1,
+            limit: pageSize,
+            totalCount: data.pagination.total,
+            totalPages: data.pagination.totalPages,
+            hasNext: 1 < data.pagination.totalPages,
+            hasPrev: false
+          });
+          setStatusCounts(data.statusCounts || { 
+            totalCamp: 0,
+            runningCamp: 0,
+            approvalCamp: 0,
+            completedCamp: 0
+          });
+        }
+      })
+      .catch(err => {
+        console.error('검색 실행 중 오류:', err);
+        setError(err.message);
+      });
   };
 
   const handleReset = () => {
@@ -175,6 +230,46 @@ export default function CampaignsPage() {
     setStartDate('');
     setEndDate('');
     setPagination(prev => ({ ...prev, page: 1 }));
+    
+    // 리셋 후 즉시 데이터 조회 (1페이지, 기본 조건)
+    setTimeout(() => {
+      const params = new URLSearchParams({
+        page: "1",
+        limit: pageSize.toString(),
+        search: "",
+        status: "all",
+        type: "all",
+        channel: "all",
+        start_date: "",
+        end_date: ""
+      });
+
+      fetch(`/api/campaigns?${params}`)
+        .then(response => response.json())
+        .then(data => {
+          if (data.success) {
+            setCampaigns(data.data || []);
+            setPagination({
+              page: 1,
+              limit: pageSize,
+              totalCount: data.pagination.total,
+              totalPages: data.pagination.totalPages,
+              hasNext: 1 < data.pagination.totalPages,
+              hasPrev: false
+            });
+            setStatusCounts(data.statusCounts || { 
+              totalCamp: 0,
+              runningCamp: 0,
+              approvalCamp: 0,
+              completedCamp: 0
+            });
+          }
+        })
+        .catch(err => {
+          console.error('리셋 후 데이터 조회 중 오류:', err);
+          setError(err.message);
+        });
+    }, 100);
   };
 
   const handlePageChange = (newPage: number) => {
@@ -209,7 +304,7 @@ export default function CampaignsPage() {
 
   // 상태별 캠페인 수 계산 (API에서 받은 전체 기준 데이터 사용)
   const getStatusCount = (statusCode: string) => {
-    return statusCounts[statusCode] || 0;
+    return statusCounts[statusCode as keyof StatusCounts] || 0;
   };
 
   // 액션 버튼 표시 조건 확인

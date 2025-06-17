@@ -5,11 +5,13 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const page = parseInt(searchParams.get('page') || '1');
   const limit = parseInt(searchParams.get('limit') || '10');
+  const search = searchParams.get('search') || '';
   const status = searchParams.get('status');
   const type = searchParams.get('type');
+  const approval = searchParams.get('approval');
   const offset = (page - 1) * limit;
 
-  console.log('Scripts API GET - 파라미터:', { page, limit, status, type, offset });
+  console.log('Scripts API GET - 파라미터:', { page, limit, search, status, type, approval, offset });
 
   try {
     let whereClause = 'WHERE 1=1';

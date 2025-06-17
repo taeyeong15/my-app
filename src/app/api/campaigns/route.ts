@@ -9,6 +9,9 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search') || '';
     const status = searchParams.get('status') || '';
     const type = searchParams.get('type') || '';
+    const channel = searchParams.get('channel') || '';
+    const start_date = searchParams.get('start_date') || '';
+    const end_date = searchParams.get('end_date') || '';
     const offset = (page - 1) * limit;
 
     // WHERE 조건 구성
@@ -16,8 +19,9 @@ export async function GET(request: NextRequest) {
     let queryParams: any[] = [];
 
     if (search) {
-      whereConditions.push('(name LIKE ? OR description LIKE ?)');
-      queryParams.push(`%${search}%`, `%${search}%`);
+      whereConditions.push('(name LIKE ? OR description LIKE ? OR created_by LIKE ?)');
+      const searchPattern = `%${search}%`;
+      queryParams.push(searchPattern, searchPattern, searchPattern);
     }
 
     if (status && status !== 'all') {
@@ -28,6 +32,21 @@ export async function GET(request: NextRequest) {
     if (type && type !== 'all') {
       whereConditions.push('type = ?');
       queryParams.push(type);
+    }
+
+    if (channel && channel !== 'all') {
+      whereConditions.push('channels LIKE ?');
+      queryParams.push(`%${channel}%`);
+    }
+
+    if (start_date) {
+      whereConditions.push('start_date >= ?');
+      queryParams.push(start_date);
+    }
+
+    if (end_date) {
+      whereConditions.push('end_date <= ?');
+      queryParams.push(end_date);
     }
 
     const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
@@ -43,20 +62,63 @@ export async function GET(request: NextRequest) {
       total = (countResult as any[])[0].total;
     }
 
-    // 상태별 캠페인 수 조회 (필터 조건 무시하고 전체 기준)
-    const [statusCounts] = await db.execute(`
+    // 상태별 캠페인 수 조회 (검색 조건 적용)
+    let statusCountQuery = `
       SELECT 
         status,
         COUNT(*) as count
       FROM campaigns 
-      GROUP BY status
-    `);
+    `;
+    
+    // 검색 조건이 있으면 WHERE 절 추가 (상태 필터는 제외)
+    const statusQueryParams = [];
+    const statusWhereConditions = [];
+    
+    if (search) {
+      statusWhereConditions.push('(name LIKE ? OR description LIKE ? OR created_by LIKE ?)');
+      const searchPattern = `%${search}%`;
+      statusQueryParams.push(searchPattern, searchPattern, searchPattern);
+    }
+
+    if (type && type !== 'all') {
+      statusWhereConditions.push('type = ?');
+      statusQueryParams.push(type);
+    }
+
+    if (channel && channel !== 'all') {
+      statusWhereConditions.push('channels LIKE ?');
+      statusQueryParams.push(`%${channel}%`);
+    }
+
+    if (start_date) {
+      statusWhereConditions.push('start_date >= ?');
+      statusQueryParams.push(start_date);
+    }
+
+    if (end_date) {
+      statusWhereConditions.push('end_date <= ?');
+      statusQueryParams.push(end_date);
+    }
+
+    if (statusWhereConditions.length > 0) {
+      statusCountQuery += ` WHERE ${statusWhereConditions.join(' AND ')}`;
+    }
+    
+    statusCountQuery += ' GROUP BY status';
+
+    const [statusCounts] = await db.execute(statusCountQuery, statusQueryParams);
 
     // 상태별 카운트를 객체로 변환
-    const statusCountMap = (statusCounts as any[]).reduce((acc, row) => {
-      acc[row.status] = row.count;
-      return acc;
-    }, {});
+    const allStats = statusCounts as any[];
+    const statusCountsMap: {[key: string]: number} = {};
+    allStats.forEach(row => {
+      statusCountsMap[row.status] = row.count;
+    });
+
+    const totalCamp = allStats.reduce((sum, row) => sum + row.count, 0);
+    const runningCamp = statusCountsMap['RUNNING'] || 0;
+    const approvalCamp = statusCountsMap['PENDING_APPROVAL'] || 0;
+    const completedCamp = statusCountsMap['COMPLETED'] || 0;
 
     // 캠페인 목록 조회
     const mainQuery = `
@@ -80,7 +142,16 @@ export async function GET(request: NextRequest) {
         total,
         totalPages: Math.ceil(total / limit)
       },
-      statusCounts: statusCountMap
+      statusCounts: {
+        totalCamp: totalCamp,
+        runningCamp: runningCamp,
+        approvalCamp: approvalCamp,
+        completedCamp: completedCamp,
+        RUNNING: runningCamp,
+        PENDING_APPROVAL: approvalCamp,
+        COMPLETED: completedCamp,
+        ...statusCountsMap
+      }
     });
 
   } catch (error: any) {

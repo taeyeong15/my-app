@@ -10,10 +10,10 @@ export async function GET() {
       const [rows] = await pool.execute(`
         SELECT DISTINCT
           COALESCE(type, 'unknown') as code,
-          COALESCE(name, type, 'Unknown') as name
+          COALESCE(name, 'unknown') as name
         FROM channels 
-        WHERE status = 'active' AND type IS NOT NULL
-        ORDER BY name
+        WHERE status = 'active'
+        ORDER BY code, name
       `);
       
       channelTypes = rows as any[];
@@ -48,7 +48,7 @@ export async function GET() {
 
     return NextResponse.json({
       success: true,
-      types: uniqueChannels
+      channels: uniqueChannels
     });
 
   } catch (error: any) {
@@ -66,7 +66,7 @@ export async function GET() {
 
     return NextResponse.json({
       success: true,
-      types: defaultChannels
+      channels: defaultChannels
     });
   }
 } 

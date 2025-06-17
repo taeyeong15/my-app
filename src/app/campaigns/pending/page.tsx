@@ -42,12 +42,22 @@ interface Pagination {
   hasPrev: boolean;
 }
 
+interface CommonCode {
+  category: string;
+  sub_category: string;
+  code: string;
+  name: string;
+  description: string;
+  sort_order: number;
+}
+
 export default function PendingCampaignsPage() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [user, setUser] = useState<User | null>(null);
   const [campaigns, setCampaigns] = useState<PendingCampaign[]>([]);
+  const [priorityCodes, setPriorityCodes] = useState<CommonCode[]>([]);
   const [filterPriority, setFilterPriority] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [pagination, setPagination] = useState<Pagination>({
@@ -59,11 +69,22 @@ export default function PendingCampaignsPage() {
     hasPrev: false
   });
 
+  const [statistics, setStatistics] = useState({
+    totalPending: 0,
+    urgentCount: 0,
+    highCount: 0,
+    normalCount: 0,
+    lowCount: 0,
+    avgWaitingDays: 0
+  });
+
   // 반려 모달 상태 추가
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [selectedCampaignId, setSelectedCampaignId] = useState<number | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+
+
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -77,6 +98,10 @@ export default function PendingCampaignsPage() {
 
         const userData = JSON.parse(loggedInUser);
         setUser(userData);
+        
+        // 우선순위 코드 로드
+        await loadPriorityCodes();
+        
         await loadCampaigns();
       } catch (error) {
         console.error('인증 확인 실패:', error);
@@ -87,18 +112,41 @@ export default function PendingCampaignsPage() {
     checkAuth();
   }, [router]);
 
+  // 페이징만 자동 재조회 (검색 조건은 검색 버튼으로만)
   useEffect(() => {
-    if (user) {
+    if (user && !isLoading) { // 초기 로딩이 아닐 때만
       loadCampaigns();
     }
   }, [pagination.page, pagination.limit]);
+
+  const loadPriorityCodes = async () => {
+    try {
+      const response = await fetch('/api/common-codes?category=CAMPAIGN&sub_category=PRIORITY');
+      const data = await response.json();
+      
+      if (response.ok) {
+        setPriorityCodes(data.codes || []);
+      } else {
+        console.error('우선순위 코드 조회 실패:', data.error);
+      }
+    } catch (error) {
+      console.error('우선순위 코드 조회 오류:', error);
+    }
+  };
 
   const loadCampaigns = async () => {
     try {
       setIsLoading(true);
       setError('');
       
-      const response = await fetch(`/api/pending-campaigns?page=${pagination.page}&limit=${pagination.limit}`);
+      const params = new URLSearchParams({
+        page: pagination.page.toString(),
+        limit: pagination.limit.toString(),
+        search: searchTerm,
+        priority: filterPriority
+      });
+
+      const response = await fetch(`/api/pending-campaigns?${params}`);
       const data = await response.json();
       
       if (data.success) {
@@ -110,6 +158,9 @@ export default function PendingCampaignsPage() {
           hasNext: data.pagination.page < data.pagination.totalPages,
           hasPrev: data.pagination.page > 1
         });
+        if (data.statistics) {
+          setStatistics(data.statistics);
+        }
       } else {
         throw new Error(data.error || '승인대기 캠페인을 불러오는데 실패했습니다.');
       }
@@ -232,12 +283,93 @@ export default function PendingCampaignsPage() {
     setPagination(prev => ({ ...prev, limit: newSize, page: 1 }));
   };
 
-  const filteredCampaigns = campaigns.filter(campaign => {
-    const matchesPriority = filterPriority === 'all' || campaign.priority === filterPriority;
-    const matchesSearch = campaign.campaign_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         campaign.requester.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesPriority && matchesSearch;
-  });
+  const handleSearch = () => {
+    // 검색 시에는 명시적으로 1페이지로 설정하여 호출
+    const params = new URLSearchParams({
+      page: "1",
+      limit: pagination.limit.toString(),
+      search: searchTerm,
+      priority: filterPriority
+    });
+
+    setIsLoading(true);
+    setError('');
+    
+    fetch(`/api/pending-campaigns?${params}`)
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          setCampaigns(data.data || []);
+          setPagination({
+            page: 1,
+            limit: pagination.limit,
+            totalCount: data.pagination.total,
+            totalPages: data.pagination.totalPages,
+            hasNext: 1 < data.pagination.totalPages,
+            hasPrev: false
+          });
+          if (data.statistics) {
+            setStatistics(data.statistics);
+          }
+        } else {
+          throw new Error(data.error || '승인대기 캠페인을 불러오는데 실패했습니다.');
+        }
+      })
+      .catch(error => {
+        console.error('승인대기 캠페인 조회 오류:', error);
+        setError(error.message);
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
+  };
+
+  const handleReset = () => {
+    setSearchTerm('');
+    setFilterPriority('all');
+    setPagination(prev => ({ ...prev, page: 1 }));
+    
+    // 리셋 후 즉시 데이터 조회 (1페이지, 기본 조건)
+    setTimeout(() => {
+      const params = new URLSearchParams({
+        page: "1",
+        limit: pagination.limit.toString(),
+        search: "",
+        priority: "all"
+      });
+
+      setIsLoading(true);
+      setError('');
+      
+      fetch(`/api/pending-campaigns?${params}`)
+        .then(response => response.json())
+        .then(data => {
+          if (data.success) {
+            setCampaigns(data.data || []);
+            setPagination({
+              page: 1,
+              limit: pagination.limit,
+              totalCount: data.pagination.total,
+              totalPages: data.pagination.totalPages,
+              hasNext: 1 < data.pagination.totalPages,
+              hasPrev: false
+            });
+            if (data.statistics) {
+              setStatistics(data.statistics);
+            }
+          } else {
+            throw new Error(data.error || '승인대기 캠페인을 불러오는데 실패했습니다.');
+          }
+        })
+        .catch(error => {
+          console.error('리셋 후 데이터 조회 중 오류:', error);
+          setError(error.message);
+        })
+        .finally(() => {
+          setIsLoading(false);
+        });
+    }, 100);
+  };
 
   if (isLoading) {
     return (
@@ -290,7 +422,7 @@ export default function PendingCampaignsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-yellow-700 mb-1">전체 대기</p>
-                <p className="text-2xl font-bold text-yellow-900">{campaigns.length}</p>
+                <p className="text-2xl font-bold text-yellow-900">{statistics.totalPending}</p>
               </div>
               <div className="text-2xl">⏳</div>
             </div>
@@ -299,9 +431,7 @@ export default function PendingCampaignsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-red-700 mb-1">긴급</p>
-                <p className="text-2xl font-bold text-red-900">
-                  {campaigns.filter(c => c.priority === 'urgent').length}
-                </p>
+                <p className="text-2xl font-bold text-red-900">{statistics.urgentCount}</p>
               </div>
               <div className="text-2xl">🚨</div>
             </div>
@@ -310,9 +440,7 @@ export default function PendingCampaignsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-orange-700 mb-1">높음</p>
-                <p className="text-2xl font-bold text-orange-900">
-                  {campaigns.filter(c => c.priority === 'high').length}
-                </p>
+                <p className="text-2xl font-bold text-orange-900">{statistics.highCount}</p>
               </div>
               <div className="text-2xl">⚡</div>
             </div>
@@ -321,7 +449,7 @@ export default function PendingCampaignsPage() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-blue-700 mb-1">평균 대기일</p>
-                <p className="text-2xl font-bold text-blue-900">3.2일</p>
+                <p className="text-2xl font-bold text-blue-900">{statistics.avgWaitingDays}일</p>
               </div>
               <div className="text-2xl">📊</div>
             </div>
@@ -353,21 +481,33 @@ export default function PendingCampaignsPage() {
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
               >
                 <option value="all">전체</option>
-                <option value="urgent">긴급</option>
-                <option value="high">높음</option>
-                <option value="normal">보통</option>
-                <option value="low">낮음</option>
+                {priorityCodes.map((priority) => (
+                  <option key={priority.code} value={priority.code}>
+                    {priority.name}
+                  </option>
+                ))}
               </select>
             </div>
-            <button
-              onClick={loadCampaigns}
-              className="inline-flex items-center px-6 py-3 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              새로고침
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={handleSearch}
+                className="inline-flex items-center px-6 py-3 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                검색
+              </button>
+              <button
+                onClick={handleReset}
+                className="inline-flex items-center px-6 py-3 bg-gray-600 text-white text-sm font-medium rounded-lg hover:bg-gray-700 transition-colors"
+              >
+                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                초기화
+              </button>
+            </div>
           </div>
         </div>
 
@@ -402,7 +542,7 @@ export default function PendingCampaignsPage() {
             </div>
           </div>
 
-          {filteredCampaigns.length === 0 ? (
+          {campaigns.length === 0 ? (
             <div className="text-center py-16">
               <svg className="mx-auto h-16 w-16 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -450,7 +590,7 @@ export default function PendingCampaignsPage() {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredCampaigns.map((campaign) => (
+                  {campaigns.map((campaign) => (
                     <tr key={campaign.id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-6 py-4">
                         <div>
@@ -529,47 +669,45 @@ export default function PendingCampaignsPage() {
           )}
 
           {/* 페이징 */}
-          {pagination.totalPages > 1 && (
-            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
-              <div className="flex items-center justify-center space-x-2">
+          <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
+            <div className="flex items-center justify-center space-x-2">
+              <button
+                onClick={() => handlePageChange(pagination.page - 1)}
+                disabled={!pagination.hasPrev}
+                className={`px-3 py-1 rounded-md ${
+                  pagination.hasPrev
+                    ? 'text-gray-700 hover:bg-gray-100'
+                    : 'text-gray-400 cursor-not-allowed'
+                }`}
+              >
+                이전
+              </button>
+              {Array.from({ length: pagination.totalPages }, (_, i) => i + 1).map((pageNum) => (
                 <button
-                  onClick={() => handlePageChange(pagination.page - 1)}
-                  disabled={!pagination.hasPrev}
+                  key={pageNum}
+                  onClick={() => handlePageChange(pageNum)}
                   className={`px-3 py-1 rounded-md ${
-                    pagination.hasPrev
-                      ? 'text-gray-700 hover:bg-gray-100'
-                      : 'text-gray-400 cursor-not-allowed'
+                    pageNum === pagination.page
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-700 hover:bg-gray-100'
                   }`}
                 >
-                  이전
+                  {pageNum}
                 </button>
-                {Array.from({ length: pagination.totalPages }, (_, i) => i + 1).map((pageNum) => (
-                  <button
-                    key={pageNum}
-                    onClick={() => handlePageChange(pageNum)}
-                    className={`px-3 py-1 rounded-md ${
-                      pageNum === pagination.page
-                        ? 'bg-blue-600 text-white'
-                        : 'text-gray-700 hover:bg-gray-100'
-                    }`}
-                  >
-                    {pageNum}
-                  </button>
-                ))}
-                <button
-                  onClick={() => handlePageChange(pagination.page + 1)}
-                  disabled={!pagination.hasNext}
-                  className={`px-3 py-1 rounded-md ${
-                    pagination.hasNext
-                      ? 'text-gray-700 hover:bg-gray-100'
-                      : 'text-gray-400 cursor-not-allowed'
-                  }`}
-                >
-                  다음
-                </button>
-              </div>
+              ))}
+              <button
+                onClick={() => handlePageChange(pagination.page + 1)}
+                disabled={!pagination.hasNext}
+                className={`px-3 py-1 rounded-md ${
+                  pagination.hasNext
+                    ? 'text-gray-700 hover:bg-gray-100'
+                    : 'text-gray-400 cursor-not-allowed'
+                }`}
+              >
+                다음
+              </button>
             </div>
-          )}
+          </div>
         </div>
       </div>
 

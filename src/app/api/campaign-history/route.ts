@@ -27,6 +27,26 @@ export async function GET(request: NextRequest) {
       queryParams.push(actionType);
     }
 
+    if (search && search.trim()) {
+      whereConditions.push('(c.name LIKE ? OR ch.action_by LIKE ? OR ch.comments LIKE ?)');
+      const searchTerm = `%${search.trim()}%`;
+      queryParams.push(searchTerm, searchTerm, searchTerm);
+    }
+
+    if (dateRange && dateRange !== 'all') {
+      switch (dateRange) {
+        case 'today':
+          whereConditions.push('DATE(ch.action_date) = CURDATE()');
+          break;
+        case 'week':
+          whereConditions.push('ch.action_date >= DATE_SUB(NOW(), INTERVAL 7 DAY)');
+          break;
+        case 'month':
+          whereConditions.push('ch.action_date >= DATE_SUB(NOW(), INTERVAL 30 DAY)');
+          break;
+      }
+    }
+
     const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
 
     // 총 개수 조회
@@ -34,7 +54,30 @@ export async function GET(request: NextRequest) {
     const [countResult] = await pool.execute(countQuery, queryParams);
     const total = (countResult as any[])[0].total;
 
-    // 데이터 조회
+    // 전체 통계 데이터 조회 (페이징과 무관하게 전체 데이터 기준)
+    const statsQuery = `
+      SELECT 
+        ch.action_type,
+        COUNT(*) as count,
+        DATE(ch.action_date) as action_date
+      FROM campaign_history ch
+      LEFT JOIN campaigns c ON ch.campaign_id = c.id
+      ${whereClause}
+      GROUP BY ch.action_type, DATE(ch.action_date)
+    `;
+    const [statsRows] = await pool.execute(statsQuery, queryParams);
+
+    // 통계 계산
+    const allStats = statsRows as any[];
+    const totalHistory = allStats.reduce((sum, row) => sum + row.count, 0);
+    const approvedCount = allStats.filter(row => row.action_type === 'approved').reduce((sum, row) => sum + row.count, 0);
+    const updatedCount = allStats.filter(row => row.action_type === 'updated').reduce((sum, row) => sum + row.count, 0);
+    
+    // 오늘 활동 계산
+    const today = new Date().toISOString().split('T')[0];
+    const todayActivity = allStats.filter(row => row.action_date === today).reduce((sum, row) => sum + row.count, 0);
+
+    // 페이징된 데이터 조회
     const mainQuery = `
       SELECT 
         ch.*,
@@ -91,10 +134,10 @@ export async function GET(request: NextRequest) {
         hasPrev: page > 1
       },
       statistics: {
-        totalHistory: total,
-        approvedCount: 0,
-        updatedCount: 0,
-        todayActivity: 0
+        totalHistory,
+        approvedCount,
+        updatedCount,
+        todayActivity
       }
     });
 

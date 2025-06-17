@@ -14,7 +14,8 @@ export async function POST(request: NextRequest) {
       campaign_id,
       requester_id,
       approver_id,
-      request_message
+      request_message,
+      priority = 'normal'
     } = body;
 
     // 필수 파라미터 검증
@@ -35,9 +36,9 @@ export async function POST(request: NextRequest) {
     // 2. 승인 요청 생성 (request_message가 null일 수 있으므로 명시적 처리)
     const [result] = await connection.execute(`
       INSERT INTO campaign_approval_requests (
-        campaign_id, requester_id, approver_id, request_message, status
-      ) VALUES (?, ?, ?, ?, 'PENDING')
-    `, [campaign_id, requester_id, approver_id, request_message || null]);
+        campaign_id, requester_id, approver_id, request_message, priority, status
+      ) VALUES (?, ?, ?, ?, ?, 'PENDING')
+    `, [campaign_id, requester_id, approver_id, request_message || null, priority]);
 
     // 3. 캠페인 상태를 PENDING_APPROVAL로 변경
     await connection.execute(`

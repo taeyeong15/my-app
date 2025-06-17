@@ -36,7 +36,7 @@ export default function CustomerGroupsPage() {
   const [error, setError] = useState('');
   const [pagination, setPagination] = useState<Pagination>({
     page: 1,
-    limit: 10,
+    limit: 5,
     total: 0,
     totalPages: 0,
     hasNext: false,
@@ -45,7 +45,14 @@ export default function CustomerGroupsPage() {
 
   useEffect(() => {
     fetchCustomerGroups();
-  }, [pagination.page, pagination.limit, searchTerm, filterStatus]);
+  }, []);
+
+  // 페이징만 자동 재조회 (검색 조건은 검색 버튼으로만)
+  useEffect(() => {
+    if (!isLoading) { // 초기 로딩이 아닐 때만
+      fetchCustomerGroups();
+    }
+  }, [pagination.page, pagination.limit]);
 
   const fetchCustomerGroups = async () => {
     try {
@@ -101,6 +108,17 @@ export default function CustomerGroupsPage() {
         {labels[status as keyof typeof labels]}
       </span>
     );
+  };
+
+  const handleSearch = () => {
+    setPagination(prev => ({ ...prev, page: 1 }));
+    fetchCustomerGroups();
+  };
+
+  const handleReset = () => {
+    setSearchTerm('');
+    setFilterStatus('all');
+    setPagination(prev => ({ ...prev, page: 1 }));
   };
 
   if (isLoading) {
@@ -219,10 +237,28 @@ export default function CustomerGroupsPage() {
                 <option value="inactive">비활성</option>
               </select>
             </div>
-            <div className="w-full lg:w-auto">
+            <div className="flex gap-2">
+              <button
+                onClick={handleSearch}
+                className="inline-flex items-center px-6 py-3 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                검색
+              </button>
+              <button
+                onClick={handleReset}
+                className="inline-flex items-center px-6 py-3 bg-gray-600 text-white text-sm font-medium rounded-lg hover:bg-gray-700 transition-colors"
+              >
+                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                초기화
+              </button>
               <Link
                 href="/customers/new"
-                className="inline-flex items-center px-6 py-3 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+                className="inline-flex items-center px-6 py-3 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors"
               >
                 <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
@@ -376,34 +412,45 @@ export default function CustomerGroupsPage() {
           )}
 
           {/* 페이징 */}
-          {pagination.totalPages > 1 && (
-            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
-              <div className="flex items-center justify-between">
-                <div className="text-sm text-gray-700">
-                  총 {pagination.total}개 중 {((pagination.page - 1) * pagination.limit) + 1}-{Math.min(pagination.page * pagination.limit, pagination.total)}개 표시
-                </div>
-                <div className="flex items-center space-x-2">
-                  <button
-                    onClick={() => handlePageChange(pagination.page - 1)}
-                    disabled={!pagination.hasPrev}
-                    className="px-3 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    이전
-                  </button>
-                  <span className="px-3 py-1 text-sm font-medium">
-                    {pagination.page} / {pagination.totalPages}
-                  </span>
-                  <button
-                    onClick={() => handlePageChange(pagination.page + 1)}
-                    disabled={!pagination.hasNext}
-                    className="px-3 py-1 text-sm border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    다음
-                  </button>
-                </div>
-              </div>
+          <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
+            <div className="flex items-center justify-center space-x-2">
+              <button
+                onClick={() => handlePageChange(pagination.page - 1)}
+                disabled={!pagination.hasPrev}
+                className={`px-3 py-1 rounded-md ${
+                  pagination.hasPrev
+                    ? 'text-gray-700 hover:bg-gray-100'
+                    : 'text-gray-400 cursor-not-allowed'
+                }`}
+              >
+                이전
+              </button>
+              {Array.from({ length: pagination.totalPages }, (_, i) => i + 1).map((pageNum) => (
+                <button
+                  key={pageNum}
+                  onClick={() => handlePageChange(pageNum)}
+                  className={`px-3 py-1 rounded-md ${
+                    pageNum === pagination.page
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-700 hover:bg-gray-100'
+                  }`}
+                >
+                  {pageNum}
+                </button>
+              ))}
+              <button
+                onClick={() => handlePageChange(pagination.page + 1)}
+                disabled={!pagination.hasNext}
+                className={`px-3 py-1 rounded-md ${
+                  pagination.hasNext
+                    ? 'text-gray-700 hover:bg-gray-100'
+                    : 'text-gray-400 cursor-not-allowed'
+                }`}
+              >
+                다음
+              </button>
             </div>
-          )}
+          </div>
         </div>
       </div>
     </Layout>

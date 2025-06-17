@@ -22,6 +22,15 @@ interface Offer {
   updated_at: string;
 }
 
+interface Pagination {
+  page: number;
+  limit: number;
+  totalCount: number;
+  totalPages: number;
+  hasNext: boolean;
+  hasPrev: boolean;
+}
+
 export default function OffersPage() {
   const [offers, setOffers] = useState<Offer[]>([]);
   const [filterType, setFilterType] = useState<string>('all');
@@ -29,19 +38,49 @@ export default function OffersPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [pagination, setPagination] = useState<Pagination>({
+    page: 1,
+    limit: 5,
+    totalCount: 0,
+    totalPages: 0,
+    hasNext: false,
+    hasPrev: false
+  });
 
   useEffect(() => {
     fetchOffers();
   }, []);
 
+  // 페이징만 자동 재조회 (검색 조건은 검색 버튼으로만)
+  useEffect(() => {
+    if (!isLoading) { // 초기 로딩이 아닐 때만
+      fetchOffers();
+    }
+  }, [pagination.page, pagination.limit]);
+
   const fetchOffers = async () => {
     try {
       setIsLoading(true);
-      const response = await fetch('/api/offers');
+      const params = new URLSearchParams({
+        page: pagination.page.toString(),
+        limit: pagination.limit.toString(),
+        search: searchTerm,
+        type: filterType,
+        status: filterStatus
+      });
+
+      const response = await fetch(`/api/offers?${params}`);
       const data = await response.json();
 
       if (response.ok) {
         setOffers(data.offers || []);
+        setPagination(prev => ({
+          ...prev,
+          totalCount: data.pagination?.total || 0,
+          totalPages: data.pagination?.totalPages || 0,
+          hasNext: data.pagination?.hasNext || false,
+          hasPrev: data.pagination?.hasPrev || false
+        }));
       } else {
         throw new Error(data.error || '오퍼를 불러오는데 실패했습니다.');
       }
@@ -51,6 +90,26 @@ export default function OffersPage() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleSearch = () => {
+    setPagination(prev => ({ ...prev, page: 1 }));
+    fetchOffers();
+  };
+
+  const handleReset = () => {
+    setSearchTerm('');
+    setFilterType('all');
+    setFilterStatus('all');
+    setPagination(prev => ({ ...prev, page: 1 }));
+  };
+
+  const handlePageChange = (newPage: number) => {
+    setPagination(prev => ({ ...prev, page: newPage }));
+  };
+
+  const handlePageSizeChange = (newSize: number) => {
+    setPagination(prev => ({ ...prev, limit: newSize, page: 1 }));
   };
 
   const getTypeColor = (type: string) => {
@@ -96,15 +155,6 @@ export default function OffersPage() {
     if (offer.value_type === 'percentage') return `${offer.value}%`;
     return `₩${offer.value.toLocaleString()}`;
   };
-
-  const filteredOffers = offers.filter(offer => {
-    const matchesType = filterType === 'all' || offer.type === filterType;
-    const matchesStatus = filterStatus === 'all' || offer.status === filterStatus;
-    const matchesSearch = offer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         offer.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         offer.created_by.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesType && matchesStatus && matchesSearch;
-  });
 
   if (isLoading) {
     return (
@@ -154,7 +204,7 @@ export default function OffersPage() {
           {[
             { 
               label: '전체 오퍼', 
-              value: offers.length, 
+              value: pagination.totalCount, 
               color: 'text-blue-600',
               bg: 'bg-blue-50',
               icon: '🎁'
@@ -195,11 +245,9 @@ export default function OffersPage() {
 
         {/* 필터 및 검색 */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="flex flex-col lg:flex-row lg:items-end gap-4">
-            <div className="flex-1">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                검색
-              </label>
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">검색</label>
               <input
                 type="text"
                 value={searchTerm}
@@ -208,10 +256,8 @@ export default function OffersPage() {
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
               />
             </div>
-            <div className="w-full lg:w-48">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                타입 필터
-              </label>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">유형</label>
               <select
                 value={filterType}
                 onChange={(e) => setFilterType(e.target.value)}
@@ -224,10 +270,8 @@ export default function OffersPage() {
                 <option value="point">적립금</option>
               </select>
             </div>
-            <div className="w-full lg:w-48">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                상태 필터
-              </label>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">상태</label>
               <select
                 value={filterStatus}
                 onChange={(e) => setFilterStatus(e.target.value)}
@@ -239,19 +283,30 @@ export default function OffersPage() {
                 <option value="scheduled">예정</option>
               </select>
             </div>
-            <div className="flex items-center space-x-3">
+            <div className="flex items-end gap-2">
               <button
-                onClick={fetchOffers}
-                className="inline-flex items-center px-4 py-3 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors"
+                onClick={handleSearch}
+                className="flex-1 inline-flex items-center justify-center px-4 py-3 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                검색
+              </button>
+              <button
+                onClick={handleReset}
+                className="flex-1 inline-flex items-center justify-center px-4 py-3 bg-gray-600 text-white text-sm font-medium rounded-lg hover:bg-gray-700 transition-colors"
               >
                 <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
-                새로고침
+                초기화
               </button>
+            </div>
+            <div className="flex items-end">
               <Link
                 href="/offers/new"
-                className="inline-flex items-center px-6 py-3 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+                className="w-full inline-flex items-center justify-center px-6 py-3 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors"
               >
                 <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
@@ -267,22 +322,40 @@ export default function OffersPage() {
           <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold text-gray-900">
-                오퍼 목록 ({filteredOffers.length}개)
+                오퍼 목록 ({pagination.totalCount}개 중 {offers.length}개 표시)
               </h3>
+              <div className="flex items-center space-x-3">
+                <select
+                  value={pagination.limit}
+                  onChange={(e) => handlePageSizeChange(Number(e.target.value))}
+                  className="px-3 py-1 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value={5}>5개씩</option>
+                  <option value={10}>10개씩</option>
+                  <option value={50}>50개씩</option>
+                  <option value={100}>100개씩</option>
+                </select>
+                <button
+                  onClick={fetchOffers}
+                  className="inline-flex items-center px-3 py-1 text-sm text-gray-600 hover:text-gray-800 transition-colors"
+                >
+                  <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  새로고침
+                </button>
+              </div>
             </div>
           </div>
 
-          {filteredOffers.length === 0 ? (
+          {offers.length === 0 ? (
             <div className="text-center py-16">
               <svg className="mx-auto h-16 w-16 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a1.994 1.994 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
               </svg>
               <h3 className="text-lg font-medium text-gray-900 mb-2">오퍼가 없습니다</h3>
               <p className="text-gray-500 mb-6">
-                {searchTerm || filterStatus !== 'all' || filterType !== 'all'
-                  ? '조건에 맞는 오퍼를 찾을 수 없습니다.' 
-                  : '새 오퍼를 만들어 마케팅 캠페인을 시작해보세요.'
-                }
+                조건에 맞는 오퍼를 찾을 수 없습니다.
               </p>
               <Link
                 href="/offers/new"
@@ -292,110 +365,120 @@ export default function OffersPage() {
               </Link>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      오퍼 정보
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      타입 / 혜택
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      상태
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      사용 현황
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      기간
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      생성 정보
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      액션
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredOffers.map((offer) => (
-                    <tr key={offer.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-6 py-4">
-                        <div className="text-sm font-medium text-gray-900 mb-1">
-                          {offer.name}
-                        </div>
-                        <div className="text-sm text-gray-500">
-                          {offer.description}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex flex-col space-y-1">
-                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getTypeColor(offer.type)}`}>
+            <>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">오퍼 정보</th>
+                      <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">유형</th>
+                      <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">상태</th>
+                      <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">할인 정보</th>
+                      <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">사용량</th>
+                      <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">기간</th>
+                      <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">생성자</th>
+                      <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">액션</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {offers.map((offer) => (
+                      <tr key={offer.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-6 py-4">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900 mb-1">{offer.name}</div>
+                            <div className="text-xs text-gray-500 max-w-xs truncate">{offer.description}</div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`inline-flex px-3 py-1 text-xs font-semibold rounded-full ${getTypeColor(offer.type)}`}>
                             {getTypeText(offer.type)}
                           </span>
-                          <div className="text-sm font-medium text-gray-900">
-                            {formatValue(offer)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`inline-flex px-3 py-1 text-xs font-semibold rounded-full ${getStatusColor(offer.status)}`}>
+                            {getStatusText(offer.status)}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm font-semibold text-gray-900">{formatValue(offer)}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-gray-900">
+                            {offer.usage_count.toLocaleString()} / {offer.max_usage ? offer.max_usage.toLocaleString() : '무제한'}
                           </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(offer.status)}`}>
-                          {getStatusText(offer.status)}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">
-                          {offer.usage_count.toLocaleString()} / {offer.max_usage > 0 ? offer.max_usage.toLocaleString() : '무제한'}
-                        </div>
-                        {offer.max_usage > 0 && (
-                          <div className="w-full bg-gray-200 rounded-full h-2 mt-1">
+                          <div className="w-full bg-gray-200 rounded-full h-1.5 mt-1">
                             <div 
-                              className="bg-blue-600 h-2 rounded-full" 
-                              style={{ width: `${Math.min((offer.usage_count / offer.max_usage) * 100, 100)}%` }}
+                              className="bg-blue-600 h-1.5 rounded-full" 
+                              style={{ 
+                                width: offer.max_usage ? `${Math.min((offer.usage_count / offer.max_usage) * 100, 100)}%` : '0%' 
+                              }}
                             ></div>
                           </div>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">
-                          {new Date(offer.start_date).toLocaleDateString('ko-KR')}
-                        </div>
-                        <div className="text-sm text-gray-500">
-                          ~ {new Date(offer.end_date).toLocaleDateString('ko-KR')}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{offer.created_by}</div>
-                        <div className="text-xs text-gray-500">
-                          {new Date(offer.created_at).toLocaleDateString('ko-KR')}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center space-x-3">
-                          <Link
-                            href={`/offers/${offer.id}`}
-                            className="text-blue-600 hover:text-blue-800 text-sm font-medium transition-colors"
-                          >
-                            상세보기
-                          </Link>
-                          <Link
-                            href={`/offers/${offer.id}/edit`}
-                            className="text-indigo-600 hover:text-indigo-800 text-sm font-medium transition-colors"
-                          >
-                            수정
-                          </Link>
-                          <button className="text-red-600 hover:text-red-800 text-sm font-medium transition-colors">
-                            삭제
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-gray-900">
+                            {new Date(offer.start_date).toLocaleDateString('ko-KR')}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            ~ {new Date(offer.end_date).toLocaleDateString('ko-KR')}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-sm text-gray-900">{offer.created_by}</div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                          <div className="flex items-center space-x-2">
+                            <button className="text-blue-600 hover:text-blue-900 transition-colors">수정</button>
+                            <button className="text-red-600 hover:text-red-900 transition-colors">삭제</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* 페이징 */}
+              <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
+                <div className="flex items-center justify-center space-x-2">
+                  <button
+                    onClick={() => handlePageChange(pagination.page - 1)}
+                    disabled={!pagination.hasPrev}
+                    className={`px-3 py-1 rounded-md ${
+                      pagination.hasPrev
+                        ? 'text-gray-700 hover:bg-gray-100'
+                        : 'text-gray-400 cursor-not-allowed'
+                    }`}
+                  >
+                    이전
+                  </button>
+                  {Array.from({ length: pagination.totalPages }, (_, i) => i + 1).map((pageNum) => (
+                    <button
+                      key={pageNum}
+                      onClick={() => handlePageChange(pageNum)}
+                      className={`px-3 py-1 rounded-md ${
+                        pageNum === pagination.page
+                          ? 'bg-blue-600 text-white'
+                          : 'text-gray-700 hover:bg-gray-100'
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
                   ))}
-                </tbody>
-              </table>
-            </div>
+                  <button
+                    onClick={() => handlePageChange(pagination.page + 1)}
+                    disabled={!pagination.hasNext}
+                    className={`px-3 py-1 rounded-md ${
+                      pagination.hasNext
+                        ? 'text-gray-700 hover:bg-gray-100'
+                        : 'text-gray-400 cursor-not-allowed'
+                    }`}
+                  >
+                    다음
+                  </button>
+                </div>
+              </div>
+            </>
           )}
         </div>
       </div>
