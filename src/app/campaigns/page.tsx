@@ -77,7 +77,7 @@ export default function CampaignsPage() {
     hasPrev: false
   });
   
-  // 검색 조건 상태
+  // 검색 조건 상태 (입력 중인 조건)
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterType, setFilterType] = useState('all');
@@ -86,6 +86,14 @@ export default function CampaignsPage() {
   const [endDate, setEndDate] = useState('');
   const [pageSize, setPageSize] = useState(5);
   
+  // 실제 검색에 사용되는 조건 (검색 버튼 클릭 시에만 업데이트)
+  const [appliedSearchTerm, setAppliedSearchTerm] = useState('');
+  const [appliedFilterStatus, setAppliedFilterStatus] = useState('all');
+  const [appliedFilterType, setAppliedFilterType] = useState('all');
+  const [appliedFilterChannel, setAppliedFilterChannel] = useState('all');
+  const [appliedStartDate, setAppliedStartDate] = useState('');
+  const [appliedEndDate, setAppliedEndDate] = useState('');
+  
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -93,12 +101,12 @@ export default function CampaignsPage() {
     fetchData();
   }, []);
 
-  // 페이징만 자동 재조회 (검색 조건은 검색 버튼으로만)
+  // 페이징 및 적용된 검색 조건 변경 시 자동 재조회
   useEffect(() => {
     if (!isLoading) { // 초기 로딩이 아닐 때만
       fetchCampaigns();
     }
-  }, [pagination.page, pageSize]);
+  }, [pagination.page, pageSize, appliedSearchTerm, appliedFilterStatus, appliedFilterType, appliedFilterChannel, appliedStartDate, appliedEndDate]);
 
   const fetchData = async () => {
     try {
@@ -143,12 +151,12 @@ export default function CampaignsPage() {
       const params = new URLSearchParams({
         page: pagination.page.toString(),
         limit: pageSize.toString(),
-        search: searchTerm,
-        status: filterStatus,
-        type: filterType,
-        channel: filterChannel,
-        start_date: startDate,
-        end_date: endDate
+        search: appliedSearchTerm,
+        status: appliedFilterStatus,
+        type: appliedFilterType,
+        channel: appliedFilterChannel,
+        start_date: appliedStartDate,
+        end_date: appliedEndDate
       });
 
       const response = await fetch(`/api/campaigns?${params}`);
@@ -180,96 +188,41 @@ export default function CampaignsPage() {
   };
 
   const handleSearch = () => {
-    const newPagination = { ...pagination, page: 1 };
-    setPagination(newPagination);
+    // 현재 입력된 검색 조건을 적용된 검색 조건으로 설정
+    setAppliedSearchTerm(searchTerm);
+    setAppliedFilterStatus(filterStatus);
+    setAppliedFilterType(filterType);
+    setAppliedFilterChannel(filterChannel);
+    setAppliedStartDate(startDate);
+    setAppliedEndDate(endDate);
     
-    // 검색 시에는 명시적으로 1페이지로 설정하여 호출
-    const params = new URLSearchParams({
-      page: "1",
-      limit: pageSize.toString(),
-      search: searchTerm,
-      status: filterStatus,
-      type: filterType,
-      channel: filterChannel,
-      start_date: startDate,
-      end_date: endDate
-    });
-
-    fetch(`/api/campaigns?${params}`)
-      .then(response => response.json())
-      .then(data => {
-        if (data.success) {
-          setCampaigns(data.data || []);
-          setPagination({
-            page: 1,
-            limit: pageSize,
-            totalCount: data.pagination.total,
-            totalPages: data.pagination.totalPages,
-            hasNext: 1 < data.pagination.totalPages,
-            hasPrev: false
-          });
-          setStatusCounts(data.statusCounts || { 
-            totalCamp: 0,
-            runningCamp: 0,
-            approvalCamp: 0,
-            completedCamp: 0
-          });
-        }
-      })
-      .catch(err => {
-        console.error('검색 실행 중 오류:', err);
-        setError(err.message);
-      });
+    // 페이지를 1로 리셋
+    setPagination(prev => ({ ...prev, page: 1 }));
+    
+    // 검색 실행 (useEffect에서 자동으로 호출됨)
   };
 
   const handleReset = () => {
+    // 입력 조건 초기화
     setSearchTerm('');
     setFilterStatus('all');
     setFilterType('all');
     setFilterChannel('all');
     setStartDate('');
     setEndDate('');
+    
+    // 적용된 검색 조건도 초기화
+    setAppliedSearchTerm('');
+    setAppliedFilterStatus('all');
+    setAppliedFilterType('all');
+    setAppliedFilterChannel('all');
+    setAppliedStartDate('');
+    setAppliedEndDate('');
+    
+    // 페이지를 1로 리셋
     setPagination(prev => ({ ...prev, page: 1 }));
     
-    // 리셋 후 즉시 데이터 조회 (1페이지, 기본 조건)
-    setTimeout(() => {
-      const params = new URLSearchParams({
-        page: "1",
-        limit: pageSize.toString(),
-        search: "",
-        status: "all",
-        type: "all",
-        channel: "all",
-        start_date: "",
-        end_date: ""
-      });
-
-      fetch(`/api/campaigns?${params}`)
-        .then(response => response.json())
-        .then(data => {
-          if (data.success) {
-            setCampaigns(data.data || []);
-            setPagination({
-              page: 1,
-              limit: pageSize,
-              totalCount: data.pagination.total,
-              totalPages: data.pagination.totalPages,
-              hasNext: 1 < data.pagination.totalPages,
-              hasPrev: false
-            });
-            setStatusCounts(data.statusCounts || { 
-              totalCamp: 0,
-              runningCamp: 0,
-              approvalCamp: 0,
-              completedCamp: 0
-            });
-          }
-        })
-        .catch(err => {
-          console.error('리셋 후 데이터 조회 중 오류:', err);
-          setError(err.message);
-        });
-    }, 100);
+    // 리셋 실행 (useEffect에서 자동으로 호출됨)
   };
 
   const handlePageChange = (newPage: number) => {

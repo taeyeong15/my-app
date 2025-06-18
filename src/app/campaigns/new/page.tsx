@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Layout from '@/components/Layout';
@@ -65,7 +65,8 @@ interface CampaignFormData {
   status: string;
 }
 
-export default function NewCampaignPage() {
+// SearchParams를 사용하는 내부 컴포넌트
+function NewCampaignContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const campaignId = searchParams.get('id'); // URL에서 캠페인 ID 가져오기
@@ -1274,5 +1275,25 @@ export default function NewCampaignPage() {
       </div>
       <ToastContainer />
     </Layout>
+  );
+}
+
+// Suspense로 감싼 메인 컴포넌트
+export default function NewCampaignPage() {
+  return (
+    <Suspense fallback={
+      <Layout>
+        <div className="p-8">
+          <div className="flex items-center justify-center min-h-[400px]">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+              <p className="text-gray-600">페이지를 불러오는 중...</p>
+            </div>
+          </div>
+        </div>
+      </Layout>
+    }>
+      <NewCampaignContent />
+    </Suspense>
   );
 } 

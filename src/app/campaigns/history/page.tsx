@@ -54,9 +54,17 @@ export default function CampaignHistoryPage() {
   });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  
+  // 검색 조건 상태 (입력 중인 조건)
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [dateRange, setDateRange] = useState('all');
+  
+  // 실제 검색에 사용되는 조건 (검색 버튼 클릭 시에만 업데이트)
+  const [appliedFilterStatus, setAppliedFilterStatus] = useState<string>('all');
+  const [appliedSearchTerm, setAppliedSearchTerm] = useState('');
+  const [appliedDateRange, setAppliedDateRange] = useState('all');
+  
   const [pagination, setPagination] = useState<Pagination>({
     page: 1,
     limit: 5,
@@ -71,12 +79,12 @@ export default function CampaignHistoryPage() {
     loadHistory();
   }, []);
 
-  // 페이징만 자동 재조회 (검색 조건은 검색 버튼으로만)
+  // 페이징 및 적용된 검색 조건 변경 시 자동 재조회
   useEffect(() => {
     if (!isLoading) { // 초기 로딩이 아닐 때만
       loadHistory();
     }
-  }, [pagination.page, pagination.limit]);
+  }, [pagination.page, pagination.limit, appliedFilterStatus, appliedSearchTerm, appliedDateRange]);
 
   const loadActionTypeCodes = async () => {
     try {
@@ -101,9 +109,9 @@ export default function CampaignHistoryPage() {
       const params = new URLSearchParams({
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
-        action_type: filterStatus,
-        search: searchTerm,
-        date_range: dateRange
+        action_type: appliedFilterStatus,
+        search: appliedSearchTerm,
+        date_range: appliedDateRange
       });
 
       const response = await fetch(`/api/campaign-history?${params}`);
@@ -158,48 +166,15 @@ export default function CampaignHistoryPage() {
   };
 
   const handleSearch = () => {
-    // 검색 시에는 명시적으로 1페이지로 설정하여 호출
-    const params = new URLSearchParams({
-      page: "1",
-      limit: pagination.limit.toString(),
-      action_type: filterStatus,
-      search: searchTerm,
-      date_range: dateRange
-    });
-
-    setIsLoading(true);
-    setError('');
+    // 현재 입력된 검색 조건을 적용된 검색 조건으로 설정
+    setAppliedFilterStatus(filterStatus);
+    setAppliedSearchTerm(searchTerm);
+    setAppliedDateRange(dateRange);
     
-    fetch(`/api/campaign-history?${params}`)
-      .then(response => response.json())
-      .then(data => {
-        if (data.success) {
-          setHistory(data.data || []);
-          setStatistics(data.statistics || {
-            totalHistory: 0,
-            approvedCount: 0,
-            updatedCount: 0,
-            todayActivity: 0
-          });
-          setPagination({
-            page: 1,
-            limit: pagination.limit,
-            totalCount: data.pagination.total,
-            totalPages: data.pagination.totalPages,
-            hasNext: 1 < data.pagination.totalPages,
-            hasPrev: false
-          });
-        } else {
-          throw new Error(data.error || '캠페인 이력을 불러오는데 실패했습니다.');
-        }
-      })
-      .catch(error => {
-        console.error('캠페인 이력 조회 오류:', error);
-        setError(error.message);
-      })
-      .finally(() => {
-        setIsLoading(false);
-      });
+    // 페이지를 1로 리셋
+    setPagination(prev => ({ ...prev, page: 1 }));
+    
+    // 검색 실행 (useEffect에서 자동으로 호출됨)
   };
 
   const handleReset = () => {

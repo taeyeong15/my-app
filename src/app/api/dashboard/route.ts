@@ -1,6 +1,9 @@
 import { pool } from '@/lib/database';
 import { NextRequest, NextResponse } from 'next/server';
 
+// 동적 렌더링 강제 설정
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);

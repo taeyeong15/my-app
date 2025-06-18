@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/database';
 import { dbLogger } from '@/lib/logger';
 
+// 동적 렌더링 강제 설정
+export const dynamic = 'force-dynamic';
+
 // GET: 승인대기 캠페인 목록 조회
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);

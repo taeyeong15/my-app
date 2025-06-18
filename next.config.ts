@@ -16,6 +16,10 @@ const nextConfig: NextConfig = {
         source: '/(.*)',
         headers: [
           {
+            key: 'Content-Type',
+            value: 'text/html; charset=utf-8',
+          },
+          {
             key: 'X-Frame-Options',
             value: 'DENY',
           },

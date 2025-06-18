@@ -16,6 +16,9 @@ const getDbConfig = () => {
     password: getDecryptedEnvValue('DB_PASSWORD') || 'ansxodud2410!',
     database: getDecryptedEnvValue('DB_NAME') || 'auth_db',
     port: parseInt(getDecryptedEnvValue('DB_PORT') || '3306'),
+    charset: 'utf8mb4',
+    collation: 'utf8mb4_unicode_ci',
+    timezone: '+00:00',
     waitForConnections: true,
     connectionLimit: env === 'production' ? 20 : 5,
     queueLimit: 0,
@@ -50,23 +53,8 @@ class DatabaseManager {
   private constructor() {
     this.pool = mysql.createPool(getDbConfig());
 
-    // 연결 풀 이벤트 리스너 (개발 모드에서만)
-    if (process.env.NODE_ENV === 'development') {
-      this.pool.on('connection', (connection: any) => {
-        console.log('새 DB 연결 생성:', connection.threadId);
-      });
-
-      this.pool.on('release', (connection: any) => {
-        console.log('DB 연결 반환:', connection.threadId);
-      });
-    }
-
-    this.pool.on('error', (err: any) => {
-      console.error('DB 연결 풀 오류:', err);
-      if (err.code === 'PROTOCOL_CONNECTION_LOST') {
-        console.log('DB 연결이 끊어졌습니다. 재연결을 시도합니다.');
-      }
-    });
+    // 연결 풀 이벤트 리스너 설정
+    this.setupPoolEventListeners();
 
     // 주기적인 연결 상태 확인 제거 (불필요한 연결 생성 방지)
     // setInterval(() => {
@@ -75,6 +63,38 @@ class DatabaseManager {
     //       console.error('DB 연결 상태 확인 중 오류:', err);
     //     });
     // }, 30000);
+  }
+
+  private setupPoolEventListeners(): void {
+    // 타입 에러 방지를 위해 pool을 any로 캐스팅
+    const poolWithEvents = this.pool as any;
+
+    // 연결 풀 이벤트 리스너 (개발 모드에서만)
+    if (process.env.NODE_ENV === 'development') {
+      try {
+        poolWithEvents.on('connection', (connection: any) => {
+          console.log('새 DB 연결 생성:', connection.threadId);
+        });
+
+        poolWithEvents.on('release', (connection: any) => {
+          console.log('DB 연결 반환:', connection.threadId);
+        });
+      } catch (error) {
+        console.warn('DB 연결 풀 이벤트 리스너 설정 중 오류:', error);
+      }
+    }
+
+    // 에러 이벤트 리스너 (항상 활성화)
+    try {
+      poolWithEvents.on('error', (err: any) => {
+        console.error('DB 연결 풀 오류:', err);
+        if (err.code === 'PROTOCOL_CONNECTION_LOST') {
+          console.log('DB 연결이 끊어졌습니다. 재연결을 시도합니다.');
+        }
+      });
+    } catch (error) {
+      console.warn('DB 에러 이벤트 리스너 설정 중 오류:', error);
+    }
   }
 
   public static getInstance(): DatabaseManager {
