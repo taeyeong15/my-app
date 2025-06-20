@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Layout from '@/components/Layout';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell, AreaChart, Area } from 'recharts';
+import { useRouter } from 'next/navigation';
 
 interface ChannelAnalytics {
   id: number;
@@ -39,10 +40,34 @@ export default function ChannelAnalyticsPage() {
   const [error, setError] = useState('');
   const [selectedPeriod, setSelectedPeriod] = useState('all');
   const [selectedChannelType, setSelectedChannelType] = useState('all');
+  const router = useRouter();
 
   useEffect(() => {
-    loadChannelAnalytics();
-  }, [selectedPeriod, selectedChannelType]);
+    const checkAuth = () => {
+      try {
+        const loggedInUser = sessionStorage.getItem('currentUser');
+        
+        if (!loggedInUser) {
+          router.push('/login');
+          return;
+        }
+        
+        // 인증 확인 후 데이터 로드
+        loadChannelAnalytics();
+      } catch (error) {
+        console.error('인증 확인 실패:', error);
+        router.push('/login');
+      }
+    };
+    
+    checkAuth();
+  }, [router]);
+
+  useEffect(() => {
+    if (router) {
+      loadChannelAnalytics();
+    }
+  }, [selectedPeriod]);
 
   const loadChannelAnalytics = async () => {
     try {

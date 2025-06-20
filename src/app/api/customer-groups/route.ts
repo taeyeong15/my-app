@@ -14,15 +14,24 @@ export async function GET(request: NextRequest) {
     let whereConditions = [];
     let queryParams: any[] = [];
 
+    // 사용중인 고객군만 조회
+    whereConditions.push('use_yn = ?');
+    queryParams.push('Y');
+
     if (search && search.trim()) {
-      whereConditions.push('(name LIKE ? OR description LIKE ? OR created_by LIKE ?)');
+      whereConditions.push('(group_name LIKE ? OR created_dept LIKE ? OR created_emp_no LIKE ?)');
       const searchTerm = `%${search.trim()}%`;
       queryParams.push(searchTerm, searchTerm, searchTerm);
     }
 
     if (status && status !== 'all') {
-      whereConditions.push('status = ?');
-      queryParams.push(status);
+      if (status === 'active') {
+        whereConditions.push('status = ?');
+        queryParams.push('ACTIVE');
+      } else if (status === 'inactive') {
+        whereConditions.push('status = ?');
+        queryParams.push('INACTIVE');
+      }
     }
 
     const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
@@ -36,13 +45,19 @@ export async function GET(request: NextRequest) {
     const mainQuery = `
       SELECT 
         id,
-        name,
+        group_name,
         description,
-        criteria,
+        customer_count,
         estimated_count,
         actual_count,
+        use_yn,
         status,
-        created_by,
+        created_date,
+        created_dept,
+        created_emp_no,
+        updated_date,
+        updated_dept,
+        updated_emp_no,
         created_at,
         updated_at
       FROM customer_groups 
@@ -53,32 +68,48 @@ export async function GET(request: NextRequest) {
     
     const [rows] = await pool.execute(mainQuery, queryParams);
     
-    // JSON 데이터 파싱
-    const groups = (rows as any[]).map(row => {
-      let criteria = {};
-      
-      try {
-        if (row.criteria) {
-          if (typeof row.criteria === 'string') {
-            criteria = JSON.parse(row.criteria);
-          } else {
-            criteria = row.criteria;
-          }
-        }
-      } catch (error) {
-        console.warn(`고객 그룹 조건 파싱 실패 (그룹 ${row.id}):`, row.criteria);
-        criteria = {};
-      }
-      
-      return {
-        ...row,
-        criteria
-      };
-    });
+    // 데이터 변환 (기존 API 호환성 유지)
+    const groups = (rows as any[]).map(row => ({
+      id: row.id,
+      name: row.group_name,
+      description: row.description || (row.created_dept ? `${row.created_dept} - ${row.created_emp_no}` : row.created_emp_no),
+      estimated_count: row.estimated_count || row.customer_count || 0,
+      actual_count: row.actual_count || row.customer_count || 0,
+      status: row.status,
+      use_yn: row.use_yn,
+      created_by: row.created_emp_no,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      created_date: row.created_date,
+      created_dept: row.created_dept,
+      updated_date: row.updated_date,
+      updated_dept: row.updated_dept,
+      updated_emp_no: row.updated_emp_no
+    }));
+    
+    // 전체 통계 데이터 조회 (검색 조건 적용)
+    const statsQuery = `
+      SELECT 
+        COUNT(*) as totalGroups,
+        SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END) as activeGroups,
+        SUM(customer_count) as totalEstimatedCount,
+        SUM(customer_count) as totalActualCount
+      FROM customer_groups 
+      ${whereClause}
+    `;
+    
+    const [statsResult] = await pool.execute(statsQuery, queryParams);
+    const statistics = (statsResult as any[])[0];
     
     return NextResponse.json({ 
       groups,
       success: true,
+      statistics: {
+        totalGroups: statistics.totalGroups || 0,
+        activeGroups: statistics.activeGroups || 0,
+        totalEstimatedCount: statistics.totalEstimatedCount || 0,
+        totalActualCount: statistics.totalActualCount || 0
+      },
       pagination: {
         page,
         limit,
@@ -102,31 +133,29 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const {
-      name,
-      description,
-      criteria,
-      estimated_count,
-      created_by
+      group_name,
+      created_dept,
+      created_emp_no,
+      customer_count
     } = body;
 
     // 필수 파라미터 검증
-    if (!name || !created_by) {
+    if (!group_name || !created_emp_no) {
       return NextResponse.json({
         success: false,
-        error: '필수 파라미터가 누락되었습니다. (name, created_by)'
+        error: '필수 파라미터가 누락되었습니다. (group_name, created_emp_no)'
       }, { status: 400 });
     }
 
     const [result] = await pool.execute(`
       INSERT INTO customer_groups (
-        name, description, criteria, estimated_count, actual_count, status, created_by, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, 0, 'active', ?, NOW(), NOW())
+        group_name, customer_count, use_yn, created_date, created_dept, created_emp_no
+      ) VALUES (?, ?, 'Y', CURDATE(), ?, ?)
     `, [
-      name,
-      description || null,
-      JSON.stringify(criteria || {}),
-      estimated_count || 0,
-      created_by
+      group_name,
+      customer_count || 0,
+      created_dept || '마케팅팀',
+      created_emp_no
     ]);
 
     const insertId = (result as any).insertId;

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Layout from '@/components/Layout';
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 interface Notice {
   id: number;
@@ -81,6 +82,7 @@ export default function DashboardPage() {
   const [showAllBestPractices, setShowAllBestPractices] = useState(false);
   const [showAllSegments, setShowAllSegments] = useState(false);
   const [showAllAlerts, setShowAllAlerts] = useState(false);
+  const router = useRouter();
 
   const loadDashboardData = async () => {
     try {
@@ -99,7 +101,24 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
-    loadDashboardData();
+    const checkAuth = () => {
+      try {
+        const loggedInUser = sessionStorage.getItem('currentUser');
+        
+        if (!loggedInUser) {
+          router.push('/login');
+          return;
+        }
+        
+        // 인증 확인 후 데이터 로드
+        loadDashboardData();
+      } catch (error) {
+        console.error('인증 확인 실패:', error);
+        router.push('/login');
+      }
+    };
+    
+    checkAuth();
   }, []);
 
   if (isLoading) {

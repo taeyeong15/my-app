@@ -9,13 +9,25 @@ interface CustomerGroup {
   id: number;
   name: string;
   description: string;
-  criteria: any;
   estimated_count: number;
   actual_count: number;
   status: string;
+  use_yn: string;
   created_by: string;
   created_at: string;
   updated_at: string;
+  created_date: string;
+  created_dept: string;
+  updated_date?: string;
+  updated_dept?: string;
+  updated_emp_no?: string;
+}
+
+interface User {
+  id: number;
+  email: string;
+  name: string;
+  role: string;
 }
 
 interface Pagination {
@@ -30,10 +42,26 @@ interface Pagination {
 export default function CustomerGroupsPage() {
   const router = useRouter();
   const [groups, setGroups] = useState<CustomerGroup[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterStatus, setFilterStatus] = useState('all');
+  const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  
+  // 검색 조건 상태 (입력 중인 조건)
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
+  
+  // 실제 검색에 사용되는 조건 (검색 버튼 클릭 시에만 업데이트)
+  const [appliedSearchTerm, setAppliedSearchTerm] = useState('');
+  const [appliedFilterStatus, setAppliedFilterStatus] = useState('all');
+  
+  // 통계 데이터 상태
+  const [statistics, setStatistics] = useState({
+    totalGroups: 0,
+    activeGroups: 0,
+    totalEstimatedCount: 0,
+    totalActualCount: 0
+  });
+  
   const [pagination, setPagination] = useState<Pagination>({
     page: 1,
     limit: 5,
@@ -44,15 +72,53 @@ export default function CustomerGroupsPage() {
   });
 
   useEffect(() => {
+    checkAuth();
     fetchCustomerGroups();
   }, []);
 
-  // 페이징만 자동 재조회 (검색 조건은 검색 버튼으로만)
+  // sessionStorage에서 사용자 정보 확인 및 DB에서 최신 정보 조회
+  const checkAuth = () => {
+    try {
+      // sessionStorage에서 사용자 정보 확인
+      const currentUserStr = sessionStorage.getItem('currentUser');
+      
+      if (!currentUserStr) {
+        alert('로그인이 필요합니다.');
+        router.push('/login');
+        return;
+      }
+
+      const currentUser = JSON.parse(currentUserStr);
+      
+      // 기본 사용자 정보 유효성 검사
+      if (!currentUser.id || !currentUser.email || !currentUser.name) {
+        console.error('사용자 정보가 불완전합니다.');
+        sessionStorage.clear();
+        alert('세션이 만료되었습니다. 다시 로그인해주세요.');
+        router.push('/login');
+        return;
+      }
+      
+      // 현재 사용자 정보 설정
+      setUser(currentUser);
+      
+      // 마지막 활동 시간 업데이트
+      sessionStorage.setItem('lastActivity', Date.now().toString());
+      
+    } catch (error) {
+      console.error('인증 확인 오류:', error);
+      sessionStorage.clear();
+      alert('인증 처리 중 오류가 발생했습니다. 다시 로그인해주세요.');
+      router.push('/login');
+    }
+  };
+
+  // 페이징 및 적용된 검색 조건 변경 시 자동 재조회
   useEffect(() => {
     if (!isLoading) { // 초기 로딩이 아닐 때만
       fetchCustomerGroups();
     }
-  }, [pagination.page, pagination.limit]);
+  }, [pagination.page, pagination.limit, appliedSearchTerm, appliedFilterStatus]);
 
   const fetchCustomerGroups = async () => {
     try {
@@ -60,12 +126,18 @@ export default function CustomerGroupsPage() {
       setError('');
       
       const response = await fetch(
-        `/api/customer-groups?page=${pagination.page}&limit=${pagination.limit}&search=${searchTerm}&status=${filterStatus}`
+        `/api/customer-groups?page=${pagination.page}&limit=${pagination.limit}&search=${appliedSearchTerm}&status=${appliedFilterStatus}`
       );
       const data = await response.json();
 
       if (data.success) {
         setGroups(data.groups || []);
+        setStatistics(data.statistics || {
+          totalGroups: 0,
+          activeGroups: 0,
+          totalEstimatedCount: 0,
+          totalActualCount: 0
+        });
         setPagination({
           ...pagination,
           total: data.pagination.total,
@@ -94,11 +166,15 @@ export default function CustomerGroupsPage() {
 
   const getStatusBadge = (status: string) => {
     const badges = {
+      ACTIVE: 'bg-green-100 text-green-800 border border-green-200',
+      INACTIVE: 'bg-gray-100 text-gray-800 border border-gray-200',
       active: 'bg-green-100 text-green-800 border border-green-200',
       inactive: 'bg-gray-100 text-gray-800 border border-gray-200'
     };
     
     const labels = {
+      ACTIVE: '활성',
+      INACTIVE: '비활성',
       active: '활성',
       inactive: '비활성'
     };
@@ -110,16 +186,102 @@ export default function CustomerGroupsPage() {
     );
   };
 
+  // 활성/비활성 토글 함수
+  const handleStatusToggle = async (groupId: number, currentStatus: string, groupName: string) => {
+    const newStatus = currentStatus === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+    const action = newStatus === 'ACTIVE' ? '활성화' : '비활성화';
+    
+    if (!confirm(`'${groupName}' 고객군을 ${action}하시겠습니까?`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/customer-groups/${groupId}/status`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ status: newStatus }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        alert(`고객군이 성공적으로 ${action}되었습니다.`);
+        // 데이터 다시 조회
+        fetchCustomerGroups();
+      } else {
+        if (data.details && data.details.activeCampaigns) {
+          // 진행 중인 캠페인이 있는 경우 상세 정보 표시
+          const campaignList = data.details.activeCampaigns
+            .map((campaign: any) => `• ${campaign.name} (${campaign.status})`)
+            .join('\n');
+          
+          alert(`${data.error}\n\n진행 중인 캠페인:\n${campaignList}`);
+        } else {
+          alert(data.error || `고객군 ${action}에 실패했습니다.`);
+        }
+      }
+    } catch (error: any) {
+      console.error('고객군 상태 변경 오류:', error);
+      alert(`고객군 ${action} 중 오류가 발생했습니다: ` + error.message);
+    }
+  };
+
   const handleSearch = () => {
+    // 현재 입력된 검색 조건을 적용된 검색 조건으로 설정
+    setAppliedSearchTerm(searchTerm);
+    setAppliedFilterStatus(filterStatus);
+    
+    // 페이지를 1로 리셋
     setPagination(prev => ({ ...prev, page: 1 }));
-    fetchCustomerGroups();
+    
+    // 검색 실행 (useEffect에서 자동으로 호출됨)
   };
 
   const handleReset = () => {
+    // 입력 조건 초기화
     setSearchTerm('');
     setFilterStatus('all');
+    
+    // 적용된 검색 조건도 초기화
+    setAppliedSearchTerm('');
+    setAppliedFilterStatus('all');
+    
+    // 페이지를 1로 리셋
     setPagination(prev => ({ ...prev, page: 1 }));
+    
+    // 리셋 실행 (useEffect에서 자동으로 호출됨)
   };
+
+  const handleDelete = async (groupId: number, groupName: string) => {
+    console.log(groupId, groupName);
+    if (!confirm(`'${groupName}' 고객군을 정말 삭제하시겠습니까?`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/customer-groups/${groupId}`, {
+        method: 'DELETE',
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        alert('고객군이 성공적으로 삭제되었습니다.');
+        // 현재 페이지에서 데이터 다시 조회
+        fetchCustomerGroups();
+      } else {
+        throw new Error(data.error || '고객군 삭제에 실패했습니다.');
+      }
+    } catch (error: any) {
+      console.error('고객군 삭제 오류:', error);
+      alert('고객군 삭제 중 오류가 발생했습니다: ' + error.message);
+    }
+  };
+
+  // 관리자 권한 확인
+  const isAdmin = user?.role === 'admin';
 
   if (isLoading) {
     return (
@@ -169,28 +331,28 @@ export default function CustomerGroupsPage() {
           {[
             { 
               label: '전체 고객군', 
-              value: pagination.total, 
+              value: statistics.totalGroups, 
               color: 'text-blue-600',
               bg: 'bg-blue-50',
               icon: '👥'
             },
             { 
               label: '활성 고객군', 
-              value: groups.filter(g => g.status === 'active').length, 
+              value: statistics.activeGroups, 
               color: 'text-green-600',
               bg: 'bg-green-50',
               icon: '✅'
             },
             { 
               label: '예상 고객 수', 
-              value: groups.reduce((sum, g) => sum + g.estimated_count, 0).toLocaleString(), 
+              value: statistics.totalEstimatedCount.toLocaleString(), 
               color: 'text-purple-600',
               bg: 'bg-purple-50',
               icon: '📊'
             },
             { 
               label: '실제 고객 수', 
-              value: groups.reduce((sum, g) => sum + g.actual_count, 0).toLocaleString(), 
+              value: statistics.totalActualCount.toLocaleString(), 
               color: 'text-orange-600',
               bg: 'bg-orange-50',
               icon: '🎯'
@@ -334,10 +496,10 @@ export default function CustomerGroupsPage() {
                       고객 수
                     </th>
                     <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      연결 캠페인
+                      생성 정보
                     </th>
                     <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      생성 정보
+                      수정 정보
                     </th>
                     <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       액션
@@ -355,7 +517,7 @@ export default function CustomerGroupsPage() {
                           <div className="text-sm text-gray-500 mb-2">
                             {group.description}
                           </div>
-                          <div className="flex flex-wrap gap-1">
+                          {/* <div className="flex flex-wrap gap-1">
                             {Object.keys(group.criteria).slice(0, 2).map((key, index) => (
                               <span 
                                 key={index} 
@@ -369,7 +531,7 @@ export default function CustomerGroupsPage() {
                                 +{Object.keys(group.criteria).length - 2}개 더
                               </span>
                             )}
-                          </div>
+                          </div> */}
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
@@ -377,31 +539,69 @@ export default function CustomerGroupsPage() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm font-semibold text-gray-900">
-                          예상: {group.estimated_count.toLocaleString()}명
+                          {/* 예상: {group.estimated_count.toLocaleString()}명 */}
+                          {group.estimated_count.toLocaleString()}명
                         </div>
-                        <div className="text-xs text-gray-500">
+                        {/* <div className="text-xs text-gray-500">
                           실제: {group.actual_count.toLocaleString()}명
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">
-                          -
-                        </div>
+                        </div> */}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm text-gray-900">{group.created_by}</div>
                         <div className="text-xs text-gray-500">
-                          {new Date(group.updated_at).toLocaleDateString('ko-KR')}
+                          {group.created_dept} ({group.created_date ? new Date(group.created_date).toLocaleDateString('ko-KR') : '-'})
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">{group.updated_emp_no || '-'}</div>
+                        <div className="text-xs text-gray-500">
+                          {group.updated_date ? new Date(group.updated_date).toLocaleDateString('ko-KR') : '-'}
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <div className="flex items-center space-x-2">
-                          <button className="text-blue-600 hover:text-blue-900 transition-colors">
+                          {/* 활성/비활성 토글 버튼 (관리자만) */}
+                          {isAdmin && (
+                            <button
+                              onClick={() => handleStatusToggle(group.id, group.status, group.name)}
+                              className={`relative inline-flex items-center h-6 w-11 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 ${
+                                group.status === 'ACTIVE' 
+                                  ? 'bg-green-600 focus:ring-green-500' 
+                                  : 'bg-gray-300 focus:ring-gray-500'
+                              }`}
+                              title={`${group.status === 'ACTIVE' ? '비활성화' : '활성화'}`}
+                            >
+                              <span
+                                className={`inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-200 ${
+                                  group.status === 'ACTIVE' ? 'translate-x-6' : 'translate-x-1'
+                                }`}
+                              />
+                            </button>
+                          )}
+                          
+                          <button
+                            onClick={() => router.push(`/customers/new?id=${group.id}&mode=view`)}
+                            className="inline-flex items-center px-3 py-1 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700 transition-colors"
+                          >
+                            상세보기
+                          </button>
+                          
+                          <button
+                            onClick={() => router.push(`/customers/new?id=${group.id}&mode=edit`)}
+                            className="inline-flex items-center px-3 py-1 bg-purple-600 text-white text-xs font-medium rounded hover:bg-purple-700 transition-colors"
+                          >
                             수정
                           </button>
-                          <button className="text-red-600 hover:text-red-900 transition-colors">
-                            삭제
-                          </button>
+                          
+                          {/* 삭제 버튼 (관리자만) */}
+                          {isAdmin && (
+                            <button
+                              onClick={() => handleDelete(group.id, group.name)}
+                              className="inline-flex items-center px-3 py-1 bg-red-600 text-white text-xs font-medium rounded hover:bg-red-700 transition-colors"
+                            >
+                              삭제
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

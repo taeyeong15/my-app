@@ -17,14 +17,21 @@ const getDbConfig = () => {
     database: getDecryptedEnvValue('DB_NAME') || 'auth_db',
     port: parseInt(getDecryptedEnvValue('DB_PORT') || '3306'),
     charset: 'utf8mb4',
-    collation: 'utf8mb4_unicode_ci',
     timezone: '+00:00',
+    // MySQL2 Connection Pool 최적화 설정
     waitForConnections: true,
-    connectionLimit: env === 'production' ? 20 : 5,
+    connectionLimit: env === 'production' ? 15 : 5, // 연결 수 조정
     queueLimit: 0,
-    idleTimeout: 30000,
-    enableKeepAlive: true,
-    keepAliveInitialDelay: 0
+    // Connection 레벨 옵션들
+    supportBigNumbers: true,
+    bigNumberStrings: true,
+    dateStrings: false,
+    debug: false,
+    trace: false,
+    multipleStatements: false,
+    // 성능 최적화 옵션 (MySQL2 지원 옵션만)
+    idleTimeout: 300000, // 5분 유휴 타임아웃
+    maxIdle: env === 'production' ? 5 : 2 // 최대 유휴 연결 수
   };
 
   // 환경별 추가 설정

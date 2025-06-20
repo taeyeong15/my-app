@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { pool } from '@/lib/database';
-import { verifySession } from '@/lib/session';
 import { logger } from '@/lib/logger';
 
 export async function GET() {

@@ -98,8 +98,25 @@ export default function CampaignsPage() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    const checkAuth = () => {
+      try {
+        const loggedInUser = sessionStorage.getItem('currentUser');
+        
+        if (!loggedInUser) {
+          router.push('/login');
+          return;
+        }
+        
+        // 인증 확인 후 데이터 로드
+        fetchData();
+      } catch (error) {
+        console.error('인증 확인 실패:', error);
+        router.push('/login');
+      }
+    };
+    
+    checkAuth();
+  }, [router]);
 
   // 페이징 및 적용된 검색 조건 변경 시 자동 재조회
   useEffect(() => {
@@ -601,17 +618,17 @@ export default function CampaignsPage() {
                           <div className="text-sm text-gray-900">{campaign.created_by}</div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="flex items-center space-x-3">
+                          <div className="flex items-center space-x-2">
                             <Link
                               href={`/campaigns/new?id=${campaign.id}&mode=view`}
-                              className="text-blue-600 hover:text-blue-800 text-sm font-medium transition-colors"
+                              className="inline-flex items-center px-3 py-1 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700 transition-colors"
                             >
                               상세보기
                             </Link>
                             {canEdit(campaign.status) && (
                               <Link
                                 href={`/campaigns/new?id=${campaign.id}&mode=edit`}
-                                className="text-indigo-600 hover:text-indigo-800 text-sm font-medium transition-colors"
+                                className="inline-flex items-center px-3 py-1 bg-purple-600 text-white text-xs font-medium rounded hover:bg-purple-700 transition-colors"
                               >
                                 수정
                               </Link>
@@ -619,7 +636,7 @@ export default function CampaignsPage() {
                             {canApprove(campaign.status) && (
                               <Link
                                 href="/campaigns/pending"
-                                className="text-green-600 hover:text-green-800 text-sm font-medium transition-colors"
+                                className="inline-flex items-center px-3 py-1 bg-green-600 text-white text-xs font-medium rounded hover:bg-green-700 transition-colors"
                               >
                                 승인
                               </Link>

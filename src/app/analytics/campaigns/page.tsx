@@ -37,8 +37,25 @@ export default function CampaignAnalyticsPage() {
   const [selectedCampaigns, setSelectedCampaigns] = useState<Campaign[]>([]);
 
   useEffect(() => {
-    fetchCampaigns();
-  }, []);
+    const checkAuth = () => {
+      try {
+        const loggedInUser = sessionStorage.getItem('currentUser');
+        
+        if (!loggedInUser) {
+          router.push('/login');
+          return;
+        }
+        
+        // 인증 확인 후 데이터 로드
+        fetchCampaigns();
+      } catch (error) {
+        console.error('인증 확인 실패:', error);
+        router.push('/login');
+      }
+    };
+    
+    checkAuth();
+  }, [router]);
 
   const fetchCampaigns = async () => {
     try {

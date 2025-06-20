@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import mysql from 'mysql2/promise';
+import { pool } from '@/lib/database';
 import bcrypt from 'bcryptjs';
 import { logger } from '@/lib/logger';
 import { RowDataPacket } from 'mysql2';
@@ -12,7 +12,6 @@ interface VerificationRow extends RowDataPacket {
 }
 
 export async function POST(request: Request) {
-  let connection;
   try {
     const { phone, code, newPassword } = await request.json();
 
@@ -25,23 +24,14 @@ export async function POST(request: Request) {
 
     logger.info('비밀번호 재설정 시도', { phone });
 
-    // 데이터베이스 연결
-    connection = await mysql.createConnection({
-      host: process.env.DB_HOST,
-      user: process.env.DB_USER,
-      password: process.env.DB_PASSWORD,
-      database: process.env.DB_NAME,
-    });
-
     // 인증 코드 확인
-    const [verifications] = await connection.execute<VerificationRow[]>(
+    const [verifications] = await pool.execute<VerificationRow[]>(
       'SELECT * FROM verification_codes WHERE phone = ? AND code = ? AND expires_at > NOW()',
       [phone, code]
     );
 
-    if (!Array.isArray(verifications) || verifications.length === 0) {
+    if (verifications.length === 0) {
       logger.warn('유효하지 않은 인증 코드', { phone });
-      await connection.end();
       return NextResponse.json(
         { error: '유효하지 않은 인증 코드입니다.' },
         { status: 400 }
@@ -62,19 +52,18 @@ export async function POST(request: Request) {
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
     // 비밀번호 업데이트
-    await connection.execute(
+    await pool.execute(
       'UPDATE users SET password = ? WHERE id = ?',
       [hashedPassword, verification.user_id]
     );
 
     // 사용된 인증 코드 삭제
-    await connection.execute(
+    await pool.execute(
       'DELETE FROM verification_codes WHERE phone = ?',
       [phone]
     );
 
     logger.info('비밀번호 재설정 성공', { phone });
-    await connection.end();
 
     return NextResponse.json({
       success: true,
@@ -82,13 +71,6 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     logger.error('비밀번호 재설정 오류', { error });
-    if (connection) {
-      try {
-        await connection.end();
-      } catch (err) {
-        logger.error('데이터베이스 연결 종료 오류', { error: err });
-      }
-    }
     return NextResponse.json(
       { error: '비밀번호 재설정에 실패했습니다.' },
       { status: 500 }

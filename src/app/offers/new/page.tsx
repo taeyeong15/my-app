@@ -1,7 +1,7 @@
 'use client';
 
 import Layout from '@/components/Layout';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
 interface OfferForm {
@@ -47,6 +47,24 @@ export default function NewOfferPage() {
 
   const [currentStep, setCurrentStep] = useState(1);
   const totalSteps = 4;
+
+  useEffect(() => {
+    const checkAuth = () => {
+      try {
+        const loggedInUser = sessionStorage.getItem('currentUser');
+        
+        if (!loggedInUser) {
+          router.push('/login');
+          return;
+        }
+      } catch (error) {
+        console.error('인증 확인 실패:', error);
+        router.push('/login');
+      }
+    };
+    
+    checkAuth();
+  }, [router]);
 
   const handleInputChange = (field: string, value: any) => {
     if (field.includes('.')) {

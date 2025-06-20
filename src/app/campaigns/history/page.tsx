@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Layout from '@/components/Layout';
+import { useRouter } from 'next/navigation';
 
 interface CampaignHistory {
   id: number;
@@ -44,6 +45,7 @@ interface CommonCode {
 }
 
 export default function CampaignHistoryPage() {
+  const router = useRouter();
   const [history, setHistory] = useState<CampaignHistory[]>([]);
   const [actionTypeCodes, setActionTypeCodes] = useState<CommonCode[]>([]);
   const [statistics, setStatistics] = useState<Statistics>({
@@ -75,9 +77,26 @@ export default function CampaignHistoryPage() {
   });
 
   useEffect(() => {
-    loadActionTypeCodes();
-    loadHistory();
-  }, []);
+    const checkAuth = () => {
+      try {
+        const loggedInUser = sessionStorage.getItem('currentUser');
+        
+        if (!loggedInUser) {
+          router.push('/login');
+          return;
+        }
+        
+        // 인증 확인 후 데이터 로드
+        loadActionTypeCodes();
+        loadHistory();
+      } catch (error) {
+        console.error('인증 확인 실패:', error);
+        router.push('/login');
+      }
+    };
+    
+    checkAuth();
+  }, [router]);
 
   // 페이징 및 적용된 검색 조건 변경 시 자동 재조회
   useEffect(() => {
@@ -178,55 +197,20 @@ export default function CampaignHistoryPage() {
   };
 
   const handleReset = () => {
+    // 입력 조건 초기화
     setSearchTerm('');
     setFilterStatus('all');
     setDateRange('all');
+    
+    // 적용된 검색 조건도 초기화
+    setAppliedSearchTerm('');
+    setAppliedFilterStatus('all');
+    setAppliedDateRange('all');
+    
+    // 페이지를 1로 리셋
     setPagination(prev => ({ ...prev, page: 1 }));
     
-    // 리셋 후 즉시 데이터 조회 (1페이지, 기본 조건)
-    setTimeout(() => {
-      const params = new URLSearchParams({
-        page: "1",
-        limit: pagination.limit.toString(),
-        action_type: "all",
-        search: "",
-        date_range: "all"
-      });
-
-      setIsLoading(true);
-      setError('');
-      
-      fetch(`/api/campaign-history?${params}`)
-        .then(response => response.json())
-        .then(data => {
-          if (data.success) {
-            setHistory(data.data || []);
-            setStatistics(data.statistics || {
-              totalHistory: 0,
-              approvedCount: 0,
-              updatedCount: 0,
-              todayActivity: 0
-            });
-            setPagination({
-              page: 1,
-              limit: pagination.limit,
-              totalCount: data.pagination.total,
-              totalPages: data.pagination.totalPages,
-              hasNext: 1 < data.pagination.totalPages,
-              hasPrev: false
-            });
-          } else {
-            throw new Error(data.error || '캠페인 이력을 불러오는데 실패했습니다.');
-          }
-        })
-        .catch(error => {
-          console.error('리셋 후 데이터 조회 중 오류:', error);
-          setError(error.message);
-        })
-        .finally(() => {
-          setIsLoading(false);
-        });
-    }, 100);
+    // 리셋 실행 (useEffect에서 자동으로 호출됨)
   };
 
   if (isLoading) {

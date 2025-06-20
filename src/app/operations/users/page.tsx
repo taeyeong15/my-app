@@ -55,7 +55,7 @@ export default function UsersPage() {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const loggedInUser = localStorage.getItem('currentUser');
+        const loggedInUser = sessionStorage.getItem('currentUser');
         
         if (!loggedInUser) {
           router.push('/login');
@@ -258,7 +258,7 @@ export default function UsersPage() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('currentUser');
+    sessionStorage.removeItem('currentUser');
     router.push('/login');
   };
 

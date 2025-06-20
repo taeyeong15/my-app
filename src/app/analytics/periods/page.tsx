@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Layout from '@/components/Layout';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, AreaChart, Area } from 'recharts';
+import { useRouter } from 'next/navigation';
 
 interface PeriodAnalytics {
   id: number;
@@ -38,9 +39,33 @@ export default function PeriodAnalyticsPage() {
   const [error, setError] = useState('');
   const [selectedPeriodType, setSelectedPeriodType] = useState('all');
   const [selectedYear, setSelectedYear] = useState('all');
+  const router = useRouter();
 
   useEffect(() => {
-    loadPeriodAnalytics();
+    const checkAuth = () => {
+      try {
+        const loggedInUser = sessionStorage.getItem('currentUser');
+        
+        if (!loggedInUser) {
+          router.push('/login');
+          return;
+        }
+        
+        // 인증 확인 후 데이터 로드
+        loadPeriodAnalytics();
+      } catch (error) {
+        console.error('인증 확인 실패:', error);
+        router.push('/login');
+      }
+    };
+    
+    checkAuth();
+  }, [router]);
+
+  useEffect(() => {
+    if (router) {
+      loadPeriodAnalytics();
+    }
   }, [selectedPeriodType, selectedYear]);
 
   const loadPeriodAnalytics = async () => {

@@ -3,6 +3,7 @@
 import Layout from '@/components/Layout';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 interface Script {
   id: number;
@@ -21,39 +22,66 @@ interface Script {
 interface Pagination {
   page: number;
   limit: number;
-  totalCount: number;
+  total: number;
   totalPages: number;
   hasNext: boolean;
   hasPrev: boolean;
 }
 
 export default function ScriptsPage() {
+  const router = useRouter();
   const [scripts, setScripts] = useState<Script[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterType, setFilterType] = useState<string>('all');
-  const [filterStatus, setFilterStatus] = useState<string>('all');
-  const [filterApproval, setFilterApproval] = useState<string>('all');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  
+  // 검색 조건 상태 (입력 중인 조건)
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterType, setFilterType] = useState('all');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [filterApproval, setFilterApproval] = useState('all');
+  
+  // 실제 검색에 사용되는 조건 (검색 버튼 클릭 시에만 업데이트)
+  const [appliedSearchTerm, setAppliedSearchTerm] = useState('');
+  const [appliedFilterType, setAppliedFilterType] = useState('all');
+  const [appliedFilterStatus, setAppliedFilterStatus] = useState('all');
+  const [appliedFilterApproval, setAppliedFilterApproval] = useState('all');
+  
   const [pagination, setPagination] = useState<Pagination>({
     page: 1,
     limit: 5,
-    totalCount: 0,
+    total: 0,
     totalPages: 0,
     hasNext: false,
     hasPrev: false
   });
 
   useEffect(() => {
-    fetchScripts();
-  }, []);
+    const checkAuth = () => {
+      try {
+        const loggedInUser = sessionStorage.getItem('currentUser');
+        
+        if (!loggedInUser) {
+          router.push('/login');
+          return;
+        }
+        
+        // 인증 확인 후 데이터 로드
+        fetchScripts();
+      } catch (error) {
+        console.error('인증 확인 실패:', error);
+        router.push('/login');
+      }
+    };
+    
+    checkAuth();
+  }, [router]);
 
-  // 페이징만 자동 재조회 (검색 조건은 검색 버튼으로만)
+  // 페이징 및 적용된 검색 조건 변경 시 자동 재조회
   useEffect(() => {
     if (!isLoading) { // 초기 로딩이 아닐 때만
       fetchScripts();
     }
-  }, [pagination.page, pagination.limit]);
+  }, [pagination.page, pagination.limit, appliedSearchTerm, appliedFilterType, appliedFilterStatus, appliedFilterApproval]);
 
   const fetchScripts = async () => {
     try {
@@ -61,10 +89,10 @@ export default function ScriptsPage() {
       const params = new URLSearchParams({
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
-        search: searchTerm,
-        type: filterType,
-        status: filterStatus,
-        approval: filterApproval
+        search: appliedSearchTerm,
+        type: appliedFilterType,
+        status: appliedFilterStatus,
+        approval: appliedFilterApproval
       });
 
       const response = await fetch(`/api/scripts?${params}`);
@@ -74,7 +102,7 @@ export default function ScriptsPage() {
         setScripts(data.data || []);
         setPagination(prev => ({
           ...prev,
-          totalCount: data.pagination?.total || 0,
+          total: data.pagination?.total || 0,
           totalPages: data.pagination?.totalPages || 0,
           hasNext: data.pagination?.hasNext || false,
           hasPrev: data.pagination?.hasPrev || false
@@ -91,16 +119,35 @@ export default function ScriptsPage() {
   };
 
   const handleSearch = () => {
+    // 현재 입력된 검색 조건을 적용된 검색 조건으로 설정
+    setAppliedSearchTerm(searchTerm);
+    setAppliedFilterType(filterType);
+    setAppliedFilterStatus(filterStatus);
+    setAppliedFilterApproval(filterApproval);
+    
+    // 페이지를 1로 리셋
     setPagination(prev => ({ ...prev, page: 1 }));
-    fetchScripts();
+    
+    // 검색 실행 (useEffect에서 자동으로 호출됨)
   };
 
   const handleReset = () => {
+    // 입력 조건 초기화
     setSearchTerm('');
     setFilterType('all');
     setFilterStatus('all');
     setFilterApproval('all');
+    
+    // 적용된 검색 조건도 초기화
+    setAppliedSearchTerm('');
+    setAppliedFilterType('all');
+    setAppliedFilterStatus('all');
+    setAppliedFilterApproval('all');
+    
+    // 페이지를 1로 리셋
     setPagination(prev => ({ ...prev, page: 1 }));
+    
+    // 리셋 실행 (useEffect에서 자동으로 호출됨)
   };
 
   const handlePageChange = (newPage: number) => {
@@ -219,7 +266,7 @@ export default function ScriptsPage() {
           {[
             { 
               label: '전체 스크립트', 
-              value: pagination.totalCount, 
+              value: pagination.total, 
               color: 'text-blue-600',
               bg: 'bg-blue-50',
               icon: '📄'
@@ -350,7 +397,7 @@ export default function ScriptsPage() {
           <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold text-gray-900">
-                스크립트 목록 ({pagination.totalCount}개 중 {scripts.length}개 표시)
+                스크립트 목록 ({pagination.total}개 중 {scripts.length}개 표시)
               </h3>
               <div className="flex items-center space-x-3">
                 <select

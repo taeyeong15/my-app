@@ -122,7 +122,7 @@ function NewCampaignContent() {
     const initializePage = async () => {
       try {
         // 사용자 인증 확인
-        const loggedInUser = localStorage.getItem('currentUser');
+        const loggedInUser = sessionStorage.getItem('currentUser');
         if (!loggedInUser) {
           router.push('/login');
           return;
@@ -560,8 +560,13 @@ function NewCampaignContent() {
   // 채널별 스크립트 필터링 (단일 채널 기준)
   const getFilteredScripts = () => {
     return scripts.filter(script => {
-      // 선택된 채널이 있는 경우에만 해당 채널의 스크립트만 표시
-      const channelMatch = !formData.channels || script.type === formData.channels;
+      // 채널이 선택되지 않은 경우 스크립트를 보여주지 않음
+      if (!formData.channels) {
+        return false;
+      }
+      
+      // 선택된 채널에 해당하는 스크립트만 표시
+      const channelMatch = script.type === formData.channels;
       
       // 검색 필터 적용
       const searchMatch = !scriptsFilter || 
@@ -1051,6 +1056,34 @@ function NewCampaignContent() {
               const filteredScripts = getFilteredScripts();
               const paginatedScripts = getPaginatedItems(filteredScripts, scriptsPage);
               const totalPages = getTotalPages(filteredScripts.length);
+              
+              // 채널이 선택되지 않은 경우 안내 메시지 표시
+              if (!formData.channels) {
+                return (
+                  <div className="text-center py-12">
+                    <div className="w-16 h-16 bg-gradient-to-r from-gray-100 to-gray-200 rounded-full mx-auto mb-4 flex items-center justify-center">
+                      <span className="text-2xl">📡</span>
+                    </div>
+                    <h4 className="text-lg font-semibold text-gray-700 mb-2">발송 채널을 먼저 선택해주세요</h4>
+                    <p className="text-sm text-gray-500">채널을 선택하면 해당 채널에 맞는 스크립트가 표시됩니다.</p>
+                  </div>
+                );
+              }
+              
+              // 필터링된 스크립트가 없는 경우
+              if (filteredScripts.length === 0) {
+                return (
+                  <div className="text-center py-12">
+                    <div className="w-16 h-16 bg-gradient-to-r from-gray-100 to-gray-200 rounded-full mx-auto mb-4 flex items-center justify-center">
+                      <span className="text-2xl">📝</span>
+                    </div>
+                    <h4 className="text-lg font-semibold text-gray-700 mb-2">해당 채널의 스크립트가 없습니다</h4>
+                    <p className="text-sm text-gray-500">
+                      선택한 채널 ({channels.find(c => c.code === formData.channels)?.name})에 맞는 스크립트를 찾을 수 없습니다.
+                    </p>
+                  </div>
+                );
+              }
               
               return (
                 <>

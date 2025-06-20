@@ -37,7 +37,7 @@ export default function AdminPasswordsPage() {
   useEffect(() => {
     const checkAuth = () => {
       try {
-        const loggedInUser = localStorage.getItem('currentUser');
+        const loggedInUser = sessionStorage.getItem('currentUser');
         if (!loggedInUser) {
           router.push('/login');
           return;

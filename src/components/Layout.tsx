@@ -95,11 +95,12 @@ export default function Layout({ children, title, subtitle }: LayoutProps) {
   const [openMenus, setOpenMenus] = useState<{ [key: string]: boolean }>({});
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
 
   useEffect(() => {
     const checkAuth = () => {
       try {
-        const loggedInUser = localStorage.getItem('currentUser');
+        const loggedInUser = sessionStorage.getItem('currentUser');
         
         if (!loggedInUser) {
           router.push('/login');
@@ -120,6 +121,9 @@ export default function Layout({ children, title, subtitle }: LayoutProps) {
       } catch (error) {
         console.error('인증 확인 실패:', error);
         router.push('/login');
+        return;
+      } finally {
+        setIsAuthChecking(false);
       }
     };
     
@@ -191,7 +195,9 @@ export default function Layout({ children, title, subtitle }: LayoutProps) {
 
   const handleLogout = () => {
     try {
-      localStorage.removeItem('currentUser');
+      sessionStorage.removeItem('currentUser');
+      sessionStorage.removeItem('sessionStartTime');
+      sessionStorage.removeItem('lastActivity');
       router.push('/login');
     } catch (error) {
       console.error('로그아웃 처리 중 오류:', error);
@@ -206,7 +212,7 @@ export default function Layout({ children, title, subtitle }: LayoutProps) {
     }));
   };
 
-  if (!user) {
+  if (isAuthChecking || !user) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>

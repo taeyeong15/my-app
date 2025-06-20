@@ -27,39 +27,56 @@ export default function LoginPage() {
     try {
       console.log('로그인 시도:', formData.email);
       
+      // 타임아웃 설정 (15초)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(formData),
+        signal: controller.signal
       });
 
+      clearTimeout(timeoutId);
       const data = await res.json();
       console.log('로그인 응답:', data);
 
       if (!res.ok) {
+        // 서버 에러 상태별 처리
+        if (res.status === 408) {
+          throw new Error('서버 응답이 지연되고 있습니다. 잠시 후 다시 시도해주세요.');
+        } else if (res.status >= 500) {
+          throw new Error('서버에 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요.');
+        }
         throw new Error(data.error || '로그인에 실패했습니다.');
       }
 
       if (data.success && data.user) {
         // 세션 시작 시간 설정
         const currentTime = Date.now();
-        localStorage.setItem('sessionStartTime', currentTime.toString());
-        localStorage.setItem('lastActivity', currentTime.toString());
+        sessionStorage.setItem('sessionStartTime', currentTime.toString());
+        sessionStorage.setItem('lastActivity', currentTime.toString());
         
-        // 사용자 정보를 localStorage에 저장
-        localStorage.setItem('currentUser', JSON.stringify(data.user));
+        // 사용자 정보를 sessionStorage에 저장
+        sessionStorage.setItem('currentUser', JSON.stringify(data.user));
         console.log('로그인 성공, 사용자 정보 저장:', data.user);
         
-        // dashboard 페이지로 이동
-        router.push('/dashboard');
+        // dashboard 페이지로 이동 (replace 사용으로 뒤로가기 방지)
+        router.replace('/dashboard');
       } else {
         throw new Error('로그인 응답이 올바르지 않습니다.');
       }
     } catch (err: any) {
       console.error('로그인 오류:', err);
-      setError(err.message);
+      
+      if (err.name === 'AbortError') {
+        setError('요청 시간이 초과되었습니다. 네트워크 상태를 확인하고 다시 시도해주세요.');
+      } else {
+        setError(err.message || '로그인 중 오류가 발생했습니다.');
+      }
     } finally {
       setLoading(false);
     }
@@ -84,7 +101,7 @@ export default function LoginPage() {
             <p className="text-gray-600">계정에 로그인하세요</p>
           </div>
 
-          <form className="space-y-6" onSubmit={handleSubmit}>
+          <form className="space-y-6" method="post" autoComplete="off" onSubmit={handleSubmit}>
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
                 이메일
@@ -111,7 +128,7 @@ export default function LoginPage() {
                 name="password"
                 type="password"
                 required
-                autoComplete="current-password"
+                autoComplete="new-password"
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-white"
                 value={formData.password}
                 onChange={handleChange}

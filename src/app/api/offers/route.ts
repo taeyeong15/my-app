@@ -30,15 +30,12 @@ export async function GET(request: NextRequest) {
       whereParams.push(status);
     }
 
-    console.log('Offers API GET - 쿼리 파라미터:', { whereClause, whereParams });
-
     // 총 개수 조회
     const [countResult] = await pool.execute(
       `SELECT COUNT(*) as total FROM offers ${whereClause}`,
       whereParams
     );
     const total = (countResult as any[])[0].total;
-    console.log('Offers Count 결과:', total);
 
     // 데이터 조회
     const mainQuery = `
@@ -64,9 +61,7 @@ export async function GET(request: NextRequest) {
       LIMIT ${limit} OFFSET ${offset}
     `;
     
-    console.log('실행할 쿼리:', mainQuery);
     const [rows] = await pool.execute(mainQuery, whereParams);
-    console.log('Offers Select 결과 row 수:', (rows as any[]).length);
     
     const offers = (rows as any[]).map(row => {
       return {
@@ -76,8 +71,6 @@ export async function GET(request: NextRequest) {
         end_date: row.end_date ? new Date(row.end_date).toISOString().split('T')[0] : ''
       };
     });
-
-    console.log('최종 offers 데이터:', offers.length, '개');
 
     return NextResponse.json({ 
       success: true,

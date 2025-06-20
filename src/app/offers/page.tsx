@@ -3,6 +3,7 @@
 import Layout from '@/components/Layout';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 interface Offer {
   id: number;
@@ -32,9 +33,10 @@ interface Pagination {
 }
 
 export default function OffersPage() {
+  const router = useRouter();
   const [offers, setOffers] = useState<Offer[]>([]);
-  const [filterType, setFilterType] = useState<string>('all');
-  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterType, setFilterType] = useState('all');
+  const [filterStatus, setFilterStatus] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
@@ -47,9 +49,31 @@ export default function OffersPage() {
     hasPrev: false
   });
 
+  // 실제 검색에 사용되는 조건 (검색 버튼 클릭 시에만 업데이트)
+  const [appliedSearchTerm, setAppliedSearchTerm] = useState('');
+  const [appliedFilterType, setAppliedFilterType] = useState('all');
+  const [appliedFilterStatus, setAppliedFilterStatus] = useState('all');
+
   useEffect(() => {
-    fetchOffers();
-  }, []);
+    const checkAuth = () => {
+      try {
+        const loggedInUser = sessionStorage.getItem('currentUser');
+        
+        if (!loggedInUser) {
+          router.push('/login');
+          return;
+        }
+        
+        // 인증 확인 후 데이터 로드
+        fetchOffers();
+      } catch (error) {
+        console.error('인증 확인 실패:', error);
+        router.push('/login');
+      }
+    };
+    
+    checkAuth();
+  }, [router]);
 
   // 페이징만 자동 재조회 (검색 조건은 검색 버튼으로만)
   useEffect(() => {

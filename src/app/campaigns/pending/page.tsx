@@ -58,8 +58,12 @@ export default function PendingCampaignsPage() {
   const [user, setUser] = useState<User | null>(null);
   const [campaigns, setCampaigns] = useState<PendingCampaign[]>([]);
   const [priorityCodes, setPriorityCodes] = useState<CommonCode[]>([]);
-  const [filterPriority, setFilterPriority] = useState<string>('all');
+  const [filterPriority, setFilterPriority] = useState('all');
+  const [dateRange, setDateRange] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [appliedSearchTerm, setAppliedSearchTerm] = useState('');
+  const [appliedFilterPriority, setAppliedFilterPriority] = useState('all');
+  const [appliedDateRange, setAppliedDateRange] = useState('all');
   const [pagination, setPagination] = useState<Pagination>({
     page: 1,
     limit: 5,
@@ -84,12 +88,10 @@ export default function PendingCampaignsPage() {
   const [rejectReason, setRejectReason] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
 
-
-
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const loggedInUser = localStorage.getItem('currentUser');
+        const loggedInUser = sessionStorage.getItem('currentUser');
         
         if (!loggedInUser) {
           router.push('/login');
@@ -112,12 +114,12 @@ export default function PendingCampaignsPage() {
     checkAuth();
   }, [router]);
 
-  // 페이징만 자동 재조회 (검색 조건은 검색 버튼으로만)
+  // 페이징 및 적용된 검색 조건 변경 시 자동 재조회
   useEffect(() => {
     if (user && !isLoading) { // 초기 로딩이 아닐 때만
       loadCampaigns();
     }
-  }, [pagination.page, pagination.limit]);
+  }, [pagination.page, pagination.limit, appliedSearchTerm, appliedFilterPriority, appliedDateRange]);
 
   const loadPriorityCodes = async () => {
     try {
@@ -142,8 +144,8 @@ export default function PendingCampaignsPage() {
       const params = new URLSearchParams({
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
-        search: searchTerm,
-        priority: filterPriority
+        search: appliedSearchTerm,
+        priority: appliedFilterPriority
       });
 
       const response = await fetch(`/api/pending-campaigns?${params}`);
@@ -284,91 +286,32 @@ export default function PendingCampaignsPage() {
   };
 
   const handleSearch = () => {
-    // 검색 시에는 명시적으로 1페이지로 설정하여 호출
-    const params = new URLSearchParams({
-      page: "1",
-      limit: pagination.limit.toString(),
-      search: searchTerm,
-      priority: filterPriority
-    });
-
-    setIsLoading(true);
-    setError('');
+    // 현재 입력된 검색 조건을 적용된 검색 조건으로 설정
+    setAppliedSearchTerm(searchTerm);
+    setAppliedFilterPriority(filterPriority);
+    setAppliedDateRange(dateRange);
     
-    fetch(`/api/pending-campaigns?${params}`)
-      .then(response => response.json())
-      .then(data => {
-        if (data.success) {
-          setCampaigns(data.data || []);
-          setPagination({
-            page: 1,
-            limit: pagination.limit,
-            totalCount: data.pagination.total,
-            totalPages: data.pagination.totalPages,
-            hasNext: 1 < data.pagination.totalPages,
-            hasPrev: false
-          });
-          if (data.statistics) {
-            setStatistics(data.statistics);
-          }
-        } else {
-          throw new Error(data.error || '승인대기 캠페인을 불러오는데 실패했습니다.');
-        }
-      })
-      .catch(error => {
-        console.error('승인대기 캠페인 조회 오류:', error);
-        setError(error.message);
-      })
-      .finally(() => {
-        setIsLoading(false);
-      });
+    // 페이지를 1로 리셋
+    setPagination(prev => ({ ...prev, page: 1 }));
+    
+    // 검색 실행 (useEffect에서 자동으로 호출됨)
   };
 
   const handleReset = () => {
+    // 입력 조건 초기화
     setSearchTerm('');
     setFilterPriority('all');
+    setDateRange('all');
+    
+    // 적용된 검색 조건도 초기화
+    setAppliedSearchTerm('');
+    setAppliedFilterPriority('all');
+    setAppliedDateRange('all');
+    
+    // 페이지를 1로 리셋
     setPagination(prev => ({ ...prev, page: 1 }));
     
-    // 리셋 후 즉시 데이터 조회 (1페이지, 기본 조건)
-    setTimeout(() => {
-      const params = new URLSearchParams({
-        page: "1",
-        limit: pagination.limit.toString(),
-        search: "",
-        priority: "all"
-      });
-
-      setIsLoading(true);
-      setError('');
-      
-      fetch(`/api/pending-campaigns?${params}`)
-        .then(response => response.json())
-        .then(data => {
-          if (data.success) {
-            setCampaigns(data.data || []);
-            setPagination({
-              page: 1,
-              limit: pagination.limit,
-              totalCount: data.pagination.total,
-              totalPages: data.pagination.totalPages,
-              hasNext: 1 < data.pagination.totalPages,
-              hasPrev: false
-            });
-            if (data.statistics) {
-              setStatistics(data.statistics);
-            }
-          } else {
-            throw new Error(data.error || '승인대기 캠페인을 불러오는데 실패했습니다.');
-          }
-        })
-        .catch(error => {
-          console.error('리셋 후 데이터 조회 중 오류:', error);
-          setError(error.message);
-        })
-        .finally(() => {
-          setIsLoading(false);
-        });
-    }, 100);
+    // 리셋 실행 (useEffect에서 자동으로 호출됨)
   };
 
   if (isLoading) {

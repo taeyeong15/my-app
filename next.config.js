@@ -35,6 +35,10 @@ const nextConfig = {
     serverComponentsExternalPackages: ['mysql2'],
   },
   
+  // 성능 최적화 설정
+  swcMinify: true, // SWC 기반 압축 사용
+  poweredByHeader: false, // X-Powered-By 헤더 제거
+  
   // 보안 헤더
   async headers() {
     return [
@@ -57,6 +61,11 @@ const nextConfig = {
             key: 'X-XSS-Protection',
             value: '1; mode=block',
           },
+          // 캐시 최적화
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
+          },
         ],
       },
     ];
@@ -69,6 +78,8 @@ const nextConfig = {
   images: {
     formats: ['image/webp', 'image/avif'],
     minimumCacheTTL: 60,
+    deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
+    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
   },
   
   // 환경변수 설정 (NODE_ENV는 Next.js가 자동 관리)
@@ -81,8 +92,45 @@ const nextConfig = {
     // 환경별 설정
     if (dev) {
       console.log('🔧 개발 모드로 실행 중...');
+      // 개발 모드에서 빌드 최적화
+      config.optimization = {
+        ...config.optimization,
+        splitChunks: {
+          chunks: 'all',
+          cacheGroups: {
+            vendor: {
+              test: /[\\/]node_modules[\\/]/,
+              name: 'vendors',
+              chunks: 'all',
+            },
+          },
+        },
+      };
     } else {
       console.log('🚀 프로덕션 모드로 빌드 중...');
+      // 프로덕션 모드에서 더 적극적인 최적화
+      config.optimization = {
+        ...config.optimization,
+        minimize: true,
+        splitChunks: {
+          chunks: 'all',
+          minSize: 20000,
+          maxSize: 244000,
+          cacheGroups: {
+            default: {
+              minChunks: 2,
+              priority: -20,
+              reuseExistingChunk: true,
+            },
+            vendor: {
+              test: /[\\/]node_modules[\\/]/,
+              name: 'vendors',
+              priority: -10,
+              chunks: 'all',
+            },
+          },
+        },
+      };
     }
     
     return config;
