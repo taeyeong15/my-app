@@ -15,16 +15,31 @@ export async function GET(request: NextRequest) {
 
   try {
     let whereClause = 'WHERE 1=1';
-    let whereParams = [];
+    let whereParams: any[] = [];
 
-    if (status) {
+    // 검색 조건 추가 (스크립트명, 제목, 설명, 내용, 생성자)
+    if (search && search !== 'all') {
+      whereClause += ' AND (name LIKE ? OR subject LIKE ? OR description LIKE ? OR content LIKE ? OR created_by LIKE ?)';
+      const searchTerm = `%${search}%`;
+      whereParams.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
+    }
+
+    // 상태 필터
+    if (status && status !== 'all') {
       whereClause += ' AND status = ?';
       whereParams.push(status);
     }
 
-    if (type) {
+    // 유형 필터
+    if (type && type !== 'all') {
       whereClause += ' AND type = ?';
       whereParams.push(type);
+    }
+
+    // 승인 상태 필터
+    if (approval && approval !== 'all') {
+      whereClause += ' AND approval_status = ?';
+      whereParams.push(approval);
     }
 
     console.log('Scripts API GET - 쿼리 파라미터:', { whereClause, whereParams });
@@ -37,12 +52,12 @@ export async function GET(request: NextRequest) {
     const total = (countResult as any[])[0].total;
     console.log('Count 결과:', total);
 
-    // 데이터 조회 - 캠페인 API와 동일한 방식으로 하드코딩
+    // 데이터 조회
     const mainQuery = `
       SELECT 
-        id, name, type, content, variables, status, 
-        description, subject, approval_status, created_by, 
-        approved_by, approved_at, created_at, updated_at
+        id, name, description, type, status, approval_status, content, 
+        variables, subject, created_by, approved_by, approved_at, 
+        created_at, updated_at
       FROM scripts
       ${whereClause}
       ORDER BY created_at DESC
@@ -55,7 +70,7 @@ export async function GET(request: NextRequest) {
 
     // JSON 데이터 파싱
     const scripts = (rows as any[]).map(row => {
-      let variables = {};
+      let variables = null;
       
       try {
         if (row.variables) {
@@ -63,7 +78,7 @@ export async function GET(request: NextRequest) {
         }
       } catch (error) {
         console.warn(`스크립트 ${row.id}의 variables JSON 파싱 실패:`, error);
-        variables = {};
+        variables = null;
       }
       
       return {
@@ -74,6 +89,8 @@ export async function GET(request: NextRequest) {
 
     console.log('최종 scripts 데이터:', scripts.length, '개');
 
+    const totalPages = Math.ceil(total / limit);
+
     return NextResponse.json({
       success: true,
       data: scripts,
@@ -81,7 +98,9 @@ export async function GET(request: NextRequest) {
         page,
         limit,
         total,
-        totalPages: Math.ceil(total / limit)
+        totalPages,
+        hasNext: page < totalPages,
+        hasPrev: page > 1
       }
     });
 
@@ -98,6 +117,206 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: false,
       error: '스크립트 목록을 불러오는데 실패했습니다: ' + error.message
+    }, { status: 500 });
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { 
+      name, 
+      description, 
+      type, 
+      content, 
+      subject, 
+      variables, 
+      created_by 
+    } = body;
+
+    // 필수 필드 검증
+    if (!name || !type || !content || !created_by) {
+      return NextResponse.json({
+        success: false,
+        error: '필수 필드가 누락되었습니다. (name, type, content, created_by)'
+      }, { status: 400 });
+    }
+
+    // variables를 JSON 문자열로 변환
+    const variablesJson = variables ? JSON.stringify(variables) : null;
+
+    const query = `
+      INSERT INTO scripts (
+        name, description, type, status, approval_status, content, 
+        variables, subject, created_by
+      ) VALUES (?, ?, ?, 'draft', 'pending', ?, ?, ?, ?)
+    `;
+
+    const [result] = await pool.execute(query, [
+      name,
+      description || null,
+      type,
+      content,
+      variablesJson,
+      subject || null,
+      created_by
+    ]);
+
+    const insertId = (result as any).insertId;
+
+    return NextResponse.json({
+      success: true,
+      message: '스크립트가 성공적으로 생성되었습니다.',
+      data: { id: insertId }
+    });
+
+  } catch (error: any) {
+    console.error('스크립트 생성 오류:', error);
+    return NextResponse.json({
+      success: false,
+      error: '스크립트 생성에 실패했습니다: ' + error.message
+    }, { status: 500 });
+  }
+}
+
+export async function PUT(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { 
+      id,
+      name, 
+      description, 
+      type, 
+      content, 
+      subject, 
+      variables,
+      status
+    } = body;
+
+    // 필수 필드 검증
+    if (!id) {
+      return NextResponse.json({
+        success: false,
+        error: '스크립트 ID가 필요합니다.'
+      }, { status: 400 });
+    }
+
+    // 스크립트 존재 확인
+    const [existingScript] = await pool.execute(
+      'SELECT id, approval_status FROM scripts WHERE id = ?',
+      [id]
+    );
+
+    if ((existingScript as any[]).length === 0) {
+      return NextResponse.json({
+        success: false,
+        error: '스크립트를 찾을 수 없습니다.'
+      }, { status: 404 });
+    }
+
+    // variables를 JSON 문자열로 변환
+    const variablesJson = variables ? JSON.stringify(variables) : null;
+
+    // 업데이트할 필드들 동적 구성
+    let updateFields = [];
+    let updateValues = [];
+
+    if (name !== undefined) {
+      updateFields.push('name = ?');
+      updateValues.push(name);
+    }
+    if (description !== undefined) {
+      updateFields.push('description = ?');
+      updateValues.push(description);
+    }
+    if (type !== undefined) {
+      updateFields.push('type = ?');
+      updateValues.push(type);
+    }
+    if (content !== undefined) {
+      updateFields.push('content = ?');
+      updateValues.push(content);
+    }
+    if (subject !== undefined) {
+      updateFields.push('subject = ?');
+      updateValues.push(subject);
+    }
+    if (variables !== undefined) {
+      updateFields.push('variables = ?');
+      updateValues.push(variablesJson);
+    }
+    if (status !== undefined) {
+      updateFields.push('status = ?');
+      updateValues.push(status);
+    }
+
+    // updated_at은 항상 업데이트
+    updateFields.push('updated_at = CURRENT_TIMESTAMP');
+    updateValues.push(id);
+
+    if (updateFields.length === 1) { // updated_at만 있는 경우
+      return NextResponse.json({
+        success: false,
+        error: '업데이트할 필드가 없습니다.'
+      }, { status: 400 });
+    }
+
+    const query = `UPDATE scripts SET ${updateFields.join(', ')} WHERE id = ?`;
+
+    await pool.execute(query, updateValues);
+
+    return NextResponse.json({
+      success: true,
+      message: '스크립트가 성공적으로 수정되었습니다.'
+    });
+
+  } catch (error: any) {
+    console.error('스크립트 수정 오류:', error);
+    return NextResponse.json({
+      success: false,
+      error: '스크립트 수정에 실패했습니다: ' + error.message
+    }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+
+    if (!id) {
+      return NextResponse.json({
+        success: false,
+        error: '스크립트 ID가 필요합니다.'
+      }, { status: 400 });
+    }
+
+    // 스크립트 존재 확인
+    const [existingScript] = await pool.execute(
+      'SELECT id, name FROM scripts WHERE id = ?',
+      [id]
+    );
+
+    if ((existingScript as any[]).length === 0) {
+      return NextResponse.json({
+        success: false,
+        error: '스크립트를 찾을 수 없습니다.'
+      }, { status: 404 });
+    }
+
+    // 스크립트 삭제
+    await pool.execute('DELETE FROM scripts WHERE id = ?', [id]);
+
+    return NextResponse.json({
+      success: true,
+      message: '스크립트가 성공적으로 삭제되었습니다.'
+    });
+
+  } catch (error: any) {
+    console.error('스크립트 삭제 오류:', error);
+    return NextResponse.json({
+      success: false,
+      error: '스크립트 삭제에 실패했습니다: ' + error.message
     }, { status: 500 });
   }
 } 

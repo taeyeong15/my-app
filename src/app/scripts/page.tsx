@@ -4,19 +4,24 @@ import Layout from '@/components/Layout';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useToast } from '@/components/Toast';
+import { useConfirmModal } from '@/components/ConfirmModal';
 
 interface Script {
   id: number;
   name: string;
+  description?: string;
   type: string;
   status: string;
-  content: string;
-  variables: string[];
   approval_status: 'approved' | 'pending' | 'rejected';
+  content: string;
+  variables?: any; // JSON 데이터
+  subject?: string; // 새로 추가된 제목 필드
   created_by: string;
+  approved_by?: string; // 승인자
+  approved_at?: string; // 승인일시
   created_at: string;
   updated_at: string;
-  description: string;
 }
 
 interface Pagination {
@@ -28,9 +33,33 @@ interface Pagination {
   hasPrev: boolean;
 }
 
+interface ChannelType {
+  type: string;
+  label: string;
+}
+
+interface CommonCode {
+  category: string;
+  sub_category: string;
+  code: string;
+  name: string;
+  description?: string;
+  sort_order: number;
+}
+
+interface User {
+  id: number;
+  email: string;
+  name: string;
+  role: string;
+}
+
 export default function ScriptsPage() {
   const router = useRouter();
+  const { showToast, ToastContainer } = useToast();
+  const { showConfirm, ConfirmModalComponent } = useConfirmModal();
   const [scripts, setScripts] = useState<Script[]>([]);
+  const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   
@@ -55,6 +84,17 @@ export default function ScriptsPage() {
     hasPrev: false
   });
 
+  // 동적 옵션 데이터
+  const [channelTypes, setChannelTypes] = useState<ChannelType[]>([]);
+  const [statusOptions, setStatusOptions] = useState<CommonCode[]>([]);
+  const [approvalOptions, setApprovalOptions] = useState<CommonCode[]>([]);
+  
+  // 복사 모달 관련 상태
+  const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
+  const [scriptToCopy, setScriptToCopy] = useState<Script | null>(null);
+  const [copyScriptName, setCopyScriptName] = useState('');
+  const [isCopying, setIsCopying] = useState(false);
+
   useEffect(() => {
     const checkAuth = () => {
       try {
@@ -65,7 +105,11 @@ export default function ScriptsPage() {
           return;
         }
         
+        const currentUser = JSON.parse(loggedInUser);
+        setUser(currentUser);
+        
         // 인증 확인 후 데이터 로드
+        loadOptionsData();
         fetchScripts();
       } catch (error) {
         console.error('인증 확인 실패:', error);
@@ -76,12 +120,53 @@ export default function ScriptsPage() {
     checkAuth();
   }, [router]);
 
+  // 관리자 권한 확인
+  const isAdmin = user?.role === 'admin';
+
   // 페이징 및 적용된 검색 조건 변경 시 자동 재조회
   useEffect(() => {
     if (!isLoading) { // 초기 로딩이 아닐 때만
       fetchScripts();
     }
   }, [pagination.page, pagination.limit, appliedSearchTerm, appliedFilterType, appliedFilterStatus, appliedFilterApproval]);
+
+  // 옵션 데이터 로딩
+  const loadOptionsData = async () => {
+    try {
+      // 병렬로 모든 옵션 데이터 로딩
+      const [channelTypesRes, statusRes, approvalRes] = await Promise.all([
+        fetch('/api/channels/types'),
+        fetch('/api/common-codes?category=SCRIPT&sub_category=STATUS'),
+        fetch('/api/common-codes?category=SCRIPT&sub_category=APPROVAL_STATUS')
+      ]);
+
+      // 채널 타입
+      if (channelTypesRes.ok) {
+        const channelData = await channelTypesRes.json();
+        if (channelData.success) {
+          setChannelTypes(channelData.data || []);
+        }
+      }
+
+      // 상태 옵션
+      if (statusRes.ok) {
+        const statusData = await statusRes.json();
+        if (statusData.success) {
+          setStatusOptions(statusData.data || []);
+        }
+      }
+
+      // 승인상태 옵션
+      if (approvalRes.ok) {
+        const approvalData = await approvalRes.json();
+        if (approvalData.success) {
+          setApprovalOptions(approvalData.data || []);
+        }
+      }
+    } catch (error) {
+      console.error('옵션 데이터 로딩 실패:', error);
+    }
+  };
 
   const fetchScripts = async () => {
     try {
@@ -158,6 +243,103 @@ export default function ScriptsPage() {
     setPagination(prev => ({ ...prev, limit: newSize, page: 1 }));
   };
 
+  // 스크립트 복사 함수
+  const handleCopyScript = (script: Script) => {
+    setScriptToCopy(script);
+    setCopyScriptName(`${script.name} - 복사본`);
+    setIsCopyModalOpen(true);
+  };
+
+  const executeCopyScript = async () => {
+    if (!scriptToCopy || !copyScriptName.trim() || !user) {
+      showToast('복사할 스크립트 정보가 올바르지 않습니다.', 'error');
+      return;
+    }
+
+    try {
+      setIsCopying(true);
+      
+      const response = await fetch(`/api/scripts/${scriptToCopy.id}/copy`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          newName: copyScriptName.trim(),
+          created_by: user.email
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        showToast('스크립트가 성공적으로 복사되었습니다.', 'success');
+        setIsCopyModalOpen(false);
+        setCopyScriptName('');
+        setScriptToCopy(null);
+        // 목록 새로고침
+        fetchScripts();
+      } else {
+        throw new Error(data.message || '스크립트 복사에 실패했습니다.');
+      }
+    } catch (error: any) {
+      console.error('스크립트 복사 오류:', error);
+      showToast(error.message || '스크립트 복사 중 오류가 발생했습니다.', 'error');
+    } finally {
+      setIsCopying(false);
+    }
+  };
+
+  const closeCopyModal = () => {
+    setIsCopyModalOpen(false);
+    setCopyScriptName('');
+    setScriptToCopy(null);
+  };
+
+  // 활성/비활성 토글 함수
+  const handleStatusToggle = async (scriptId: number, currentStatus: string, scriptName: string) => {
+    const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
+    const action = newStatus === 'active' ? '활성화' : '비활성화';
+    const actionIcon = newStatus === 'active' ? '✅' : '❌';
+    
+    const confirmed = await showConfirm(
+      `스크립트 ${action} 확인`,
+      `"${scriptName}" 스크립트를 ${action}하시겠습니까?\n\n${actionIcon} ${action} 후에는 관련 캠페인에 영향을 줄 수 있습니다.`,
+      {
+        confirmText: `${actionIcon} ${action}하기`,
+        cancelText: '취소',
+        type: newStatus === 'active' ? 'success' : 'warning'
+      }
+    );
+    
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/scripts/${scriptId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ status: newStatus }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        showToast(`스크립트가 성공적으로 ${action}되었습니다! 🎉`, 'success');
+        // 데이터 다시 조회
+        fetchScripts();
+      } else {
+        showToast(data.error || `스크립트 ${action}에 실패했습니다.`, 'error');
+      }
+    } catch (error: any) {
+      console.error(`스크립트 ${action} 오류:`, error);
+      showToast(`스크립트 ${action} 중 오류가 발생했습니다.`, 'error');
+    }
+  };
+
   const getStatusBadge = (status: string) => {
     const badges = {
       active: 'bg-green-100 text-green-800',
@@ -165,15 +347,13 @@ export default function ScriptsPage() {
       draft: 'bg-yellow-100 text-yellow-800'
     };
     
-    const labels = {
-      active: '활성',
-      inactive: '비활성',
-      draft: '초안'
-    };
+    // 동적 데이터에서 라벨 찾기
+    const statusOption = statusOptions.find(opt => opt.code === status);
+    const label = statusOption ? statusOption.name : status;
 
     return (
       <span className={`inline-flex px-3 py-1 text-xs font-semibold rounded-full ${badges[status as keyof typeof badges]}`}>
-        {labels[status as keyof typeof labels]}
+        {label}
       </span>
     );
   };
@@ -185,15 +365,13 @@ export default function ScriptsPage() {
       rejected: 'bg-red-100 text-red-800'
     };
     
-    const labels = {
-      approved: '승인',
-      pending: '대기',
-      rejected: '거절'
-    };
+    // 동적 데이터에서 라벨 찾기
+    const approvalOption = approvalOptions.find(opt => opt.code === approval);
+    const label = approvalOption ? approvalOption.name : approval;
 
     return (
       <span className={`inline-flex px-3 py-1 text-xs font-semibold rounded-full ${badges[approval as keyof typeof badges]}`}>
-        {labels[approval as keyof typeof labels]}
+        {label}
       </span>
     );
   };
@@ -209,13 +387,30 @@ export default function ScriptsPage() {
   };
 
   const getTypeLabel = (type: string) => {
-    switch (type) {
-      case 'email': return '이메일';
-      case 'sms': return 'SMS';
-      case 'push': return '푸시';
-      case 'alimtalk': return '알림톡';
-      default: return type;
+    // 동적 데이터에서 라벨 찾기
+    const channelType = channelTypes.find(ct => ct.type === type);
+    return channelType ? channelType.label : type;
+  };
+
+  // 페이지 번호 범위 계산 (최대 10개 페이지 번호만 표시)
+  const getPageRange = () => {
+    const maxVisible = 10;
+    const totalPages = pagination.totalPages;
+    const currentPage = pagination.page;
+
+    if (totalPages <= maxVisible) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
     }
+
+    const halfVisible = Math.floor(maxVisible / 2);
+    let start = Math.max(1, currentPage - halfVisible);
+    let end = Math.min(totalPages, start + maxVisible - 1);
+
+    if (end - start < maxVisible - 1) {
+      start = Math.max(1, end - maxVisible + 1);
+    }
+
+    return Array.from({ length: end - start + 1 }, (_, i) => start + i);
   };
 
   if (isLoading) {
@@ -262,7 +457,7 @@ export default function ScriptsPage() {
     >
       <div className="p-6 space-y-6">
         {/* 통계 대시보드 */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
           {[
             { 
               label: '전체 스크립트', 
@@ -272,8 +467,8 @@ export default function ScriptsPage() {
               icon: '📄'
             },
             { 
-              label: '활성 스크립트', 
-              value: scripts.filter(s => s.status === 'active').length, 
+              label: '승인 완료', 
+              value: scripts.filter(s => s.approval_status === 'approved').length, 
               color: 'text-green-600',
               bg: 'bg-green-50',
               icon: '✅'
@@ -284,6 +479,13 @@ export default function ScriptsPage() {
               color: 'text-yellow-600',
               bg: 'bg-yellow-50',
               icon: '⏳'
+            },
+            { 
+              label: '활성', 
+              value: scripts.filter(s => s.status === 'active').length, 
+              color: 'text-emerald-600',
+              bg: 'bg-emerald-50',
+              icon: '🚀'
             },
             { 
               label: '초안', 
@@ -314,7 +516,7 @@ export default function ScriptsPage() {
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="스크립트명, 내용 또는 생성자로 검색..."
+                placeholder="스크립트명, 제목, 내용 또는 생성자로 검색..."
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
               />
             </div>
@@ -326,10 +528,11 @@ export default function ScriptsPage() {
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
               >
                 <option value="all">전체</option>
-                <option value="email">이메일</option>
-                <option value="sms">SMS</option>
-                <option value="push">푸시</option>
-                <option value="alimtalk">알림톡</option>
+                {channelTypes.map((channelType) => (
+                  <option key={channelType.type} value={channelType.type}>
+                    {channelType.label}
+                  </option>
+                ))}
               </select>
             </div>
             <div>
@@ -340,9 +543,11 @@ export default function ScriptsPage() {
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
               >
                 <option value="all">전체</option>
-                <option value="active">활성</option>
-                <option value="inactive">비활성</option>
-                <option value="draft">초안</option>
+                {statusOptions.map((statusOption) => (
+                  <option key={statusOption.code} value={statusOption.code}>
+                    {statusOption.name}
+                  </option>
+                ))}
               </select>
             </div>
             <div>
@@ -353,9 +558,11 @@ export default function ScriptsPage() {
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
               >
                 <option value="all">전체</option>
-                <option value="approved">승인</option>
-                <option value="pending">대기</option>
-                <option value="rejected">거절</option>
+                {approvalOptions.map((approvalOption) => (
+                  <option key={approvalOption.code} value={approvalOption.code}>
+                    {approvalOption.name}
+                  </option>
+                ))}
               </select>
             </div>
             <div className="flex items-end gap-2">
@@ -446,11 +653,11 @@ export default function ScriptsPage() {
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">스크립트 정보</th>
+                      <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">제목/내용</th>
                       <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">유형</th>
                       <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">상태</th>
-                      <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">승인상태</th>
-                      <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">변수</th>
-                      <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">생성자</th>
+                      <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">승인 정보</th>
+                      <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">생성 정보</th>
                       <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">액션</th>
                     </tr>
                   </thead>
@@ -460,7 +667,22 @@ export default function ScriptsPage() {
                         <td className="px-6 py-4">
                           <div>
                             <div className="text-sm font-medium text-gray-900 mb-1">{script.name}</div>
-                            <div className="text-xs text-gray-500 max-w-xs truncate">{script.description || script.content}</div>
+                            <div className="text-xs text-gray-500 max-w-xs truncate">{script.description}</div>
+                            {script.variables && (
+                              <div className="text-xs text-blue-600 mt-1">
+                                변수 {Array.isArray(script.variables) ? script.variables.length : Object.keys(script.variables).length}개
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div>
+                            {script.subject && (
+                              <div className="text-sm font-medium text-gray-900 mb-1">{script.subject}</div>
+                            )}
+                            <div className="text-xs text-gray-500 max-w-xs truncate">
+                              {script.content?.substring(0, 100)}{script.content?.length > 100 ? '...' : ''}
+                            </div>
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
@@ -473,20 +695,133 @@ export default function ScriptsPage() {
                           {getStatusBadge(script.status)}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
+                          <div>
                           {getApprovalBadge(script.approval_status)}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">
-                            {script.variables?.length || 0}개
+                            {script.approved_by && (
+                              <div className="text-xs text-gray-500 mt-1">
+                                승인자: {script.approved_by}
+                              </div>
+                            )}
+                            {script.approved_at && (
+                              <div className="text-xs text-gray-500">
+                                {new Date(script.approved_at).toLocaleDateString('ko-KR')}
+                              </div>
+                            )}
                           </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
+                          <div>
                           <div className="text-sm text-gray-900">{script.created_by}</div>
+                            <div className="text-xs text-gray-500">
+                              {new Date(script.created_at).toLocaleDateString('ko-KR')}
+                            </div>
+                          </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                           <div className="flex items-center space-x-2">
-                            <button className="text-blue-600 hover:text-blue-900 transition-colors">수정</button>
-                            <button className="text-red-600 hover:text-red-900 transition-colors">삭제</button>
+                            {script.approval_status === 'pending' ? (
+                              <>
+                                {isAdmin && (
+                                  <button className="inline-flex items-center px-3 py-1 bg-green-600 text-white text-xs font-medium rounded hover:bg-green-700 transition-colors">
+                                    <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                    승인
+                                  </button>
+                                )}
+                                {isAdmin && (
+                                  <button className="inline-flex items-center px-3 py-1 bg-red-600 text-white text-xs font-medium rounded hover:bg-red-700 transition-colors">
+                                    <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                    거절
+                                  </button>
+                                )}
+                                {/* 수정 버튼 (관리자만) */}
+                                {isAdmin && (
+                                  <button className="inline-flex items-center px-3 py-1 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700 transition-colors">
+                                    <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                    </svg>
+                                    수정
+                                  </button>
+                                )}
+                              </>
+                                                          ) : script.approval_status === 'approved' ? (
+                                <>
+                                  {/* 활성/비활성 토글 스위치 (관리자만) */}
+                                  {isAdmin && (
+                                    <button
+                                      onClick={() => handleStatusToggle(script.id, script.status, script.name)}
+                                      className={`relative inline-flex items-center h-6 w-11 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 ${
+                                        script.status === 'active' 
+                                          ? 'bg-green-600 focus:ring-green-500' 
+                                          : 'bg-gray-300 focus:ring-gray-500'
+                                      }`}
+                                      title={`${script.status === 'active' ? '비활성화' : '활성화'}`}
+                                    >
+                                      <span
+                                        className={`inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-200 ${
+                                          script.status === 'active' ? 'translate-x-6' : 'translate-x-1'
+                                        }`}
+                                      />
+                                    </button>
+                                  )}
+                                  
+                                  {/* 수정 버튼 (관리자만) */}
+                                  {isAdmin && (
+                                    <button className="inline-flex items-center px-3 py-1 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700 transition-colors">
+                                      <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                      </svg>
+                                      수정
+                                    </button>
+                                  )}
+                                  
+                                  <button 
+                                    onClick={() => router.push(`/scripts/new?mode=view&id=${script.id}`)}
+                                    className="inline-flex items-center px-3 py-1 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700 transition-colors"
+                                  >
+                                    상세보기
+                                  </button>
+                                  
+                                  <button 
+                                    onClick={() => handleCopyScript(script)}
+                                    className="inline-flex items-center px-3 py-1 bg-purple-600 text-white text-xs font-medium rounded hover:bg-purple-700 transition-colors"
+                                  >
+                                    복사
+                                  </button>
+                                </>
+                              ) : (
+                              // rejected 상태
+                              <>
+                                {isAdmin && (
+                                  <button className="inline-flex items-center px-3 py-1 bg-orange-600 text-white text-xs font-medium rounded hover:bg-orange-700 transition-colors">
+                                    <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    재검토
+                                  </button>
+                                )}
+                                {/* 수정 버튼 (관리자만) */}
+                                {isAdmin && (
+                                  <button className="inline-flex items-center px-3 py-1 bg-gray-600 text-white text-xs font-medium rounded hover:bg-gray-700 transition-colors">
+                                    <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                    </svg>
+                                    수정
+                                  </button>
+                                )}
+                                {isAdmin && (
+                                  <button className="inline-flex items-center px-3 py-1 bg-red-600 text-white text-xs font-medium rounded hover:bg-red-700 transition-colors">
+                                    <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
+                                    삭제
+                                  </button>
+                                )}
+                              </>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -495,50 +830,195 @@ export default function ScriptsPage() {
                 </table>
               </div>
 
-              {/* 페이징 */}
+              {/* 깔끔한 페이징 */}
               <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
-                <div className="flex items-center justify-center space-x-2">
+                <div className="flex flex-col sm:flex-row items-center justify-center space-y-3 sm:space-y-0">
+                  {/* 왼쪽: 간단한 정보 */}
+                  <div className="text-sm text-gray-600">
+                    <span className="font-medium">{pagination.page}</span>
+                    <span className="mx-1 text-gray-400">/</span>
+                    <span>{pagination.totalPages}페이지</span>
+                    <span className="mx-3 text-gray-400">•</span>
+                    <span>총 {pagination.total.toLocaleString()}개</span>
+                  </div>
+
+                  {/* 가운데: 페이지 네비게이션 */}
+                  {pagination.totalPages > 1 && (
+                    <div className="flex items-center space-x-2 sm:mx-8">
+                      {/* 처음/이전 버튼 */}
+                      <div className="flex items-center space-x-1">
+                        <button
+                          onClick={() => handlePageChange(1)}
+                          disabled={pagination.page === 1}
+                          className={`p-2 rounded-lg transition-all duration-200 ${
+                            pagination.page === 1
+                              ? 'text-gray-300 cursor-not-allowed'
+                              : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50 hover:shadow-md'
+                          }`}
+                          title="첫 페이지"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+                          </svg>
+                        </button>
                   <button
                     onClick={() => handlePageChange(pagination.page - 1)}
                     disabled={!pagination.hasPrev}
-                    className={`px-3 py-1 rounded-md ${
-                      pagination.hasPrev
-                        ? 'text-gray-700 hover:bg-gray-100'
-                        : 'text-gray-400 cursor-not-allowed'
+                          className={`p-2 rounded-lg transition-all duration-200 ${
+                            !pagination.hasPrev
+                              ? 'text-gray-300 cursor-not-allowed'
+                              : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50 hover:shadow-md'
                     }`}
-                  >
-                    이전
+                          title="이전 페이지"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
+                          </svg>
                   </button>
-                  {Array.from({ length: pagination.totalPages }, (_, i) => i + 1).map((pageNum) => (
+                      </div>
+
+                      {/* 페이지 번호들 */}
+                      <div className="flex items-center space-x-1">
+                        {getPageRange().map((pageNum) => (
                     <button
                       key={pageNum}
                       onClick={() => handlePageChange(pageNum)}
-                      className={`px-3 py-1 rounded-md ${
+                            className={`min-w-[40px] h-10 px-3 rounded-lg font-medium transition-all duration-200 ${
                         pageNum === pagination.page
-                          ? 'bg-blue-600 text-white'
-                          : 'text-gray-700 hover:bg-gray-100'
+                                ? 'bg-blue-600 text-white shadow-md'
+                                : 'text-gray-700 hover:text-blue-600 hover:bg-blue-50'
                       }`}
                     >
                       {pageNum}
                     </button>
                   ))}
+                      </div>
+
+                      {/* 다음/마지막 버튼 */}
+                      <div className="flex items-center space-x-1">
                   <button
                     onClick={() => handlePageChange(pagination.page + 1)}
                     disabled={!pagination.hasNext}
-                    className={`px-3 py-1 rounded-md ${
-                      pagination.hasNext
-                        ? 'text-gray-700 hover:bg-gray-100'
-                        : 'text-gray-400 cursor-not-allowed'
-                    }`}
-                  >
-                    다음
+                          className={`p-2 rounded-lg transition-all duration-200 ${
+                            !pagination.hasNext
+                              ? 'text-gray-300 cursor-not-allowed'
+                              : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50 hover:shadow-md'
+                          }`}
+                          title="다음 페이지"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={() => handlePageChange(pagination.totalPages)}
+                          disabled={pagination.page === pagination.totalPages}
+                          className={`p-2 rounded-lg transition-all duration-200 ${
+                            pagination.page === pagination.totalPages
+                              ? 'text-gray-300 cursor-not-allowed'
+                              : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50 hover:shadow-md'
+                          }`}
+                          title="마지막 페이지"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                          </svg>
                   </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 오른쪽: 페이지 점프 (간단하게) */}
+                  {pagination.totalPages > 10 && (
+                    <div className="flex items-center space-x-2 sm:ml-8">
+                      <span className="text-xs text-gray-500">이동:</span>
+                      <select
+                        value={pagination.page}
+                        onChange={(e) => handlePageChange(Number(e.target.value))}
+                        className="px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                      >
+                        {Array.from({ length: pagination.totalPages }, (_, i) => i + 1).map((pageNum) => (
+                          <option key={pageNum} value={pageNum}>
+                            {pageNum}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
               </div>
             </>
           )}
         </div>
       </div>
+      
+      {/* 토스트 및 모달 컴포넌트 */}
+      <ToastContainer />
+      <ConfirmModalComponent />
+      
+      {/* 스크립트 복사 모달 */}
+      {isCopyModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 p-6">
+            <div className="flex items-center space-x-3 mb-6">
+              <div className="w-8 h-8 bg-gradient-to-r from-purple-500 to-pink-600 rounded-lg flex items-center justify-center">
+                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <h3 className="text-xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+                스크립트 복사
+              </h3>
+            </div>
+            
+            <div className="mb-6">
+              <p className="text-gray-600 mb-4">
+                "{scriptToCopy?.name}" 스크립트를 복사합니다.
+              </p>
+              <label className="block text-sm font-bold text-gray-700 mb-3">
+                <span className="text-red-500 mr-2">*</span>
+                새 스크립트명
+              </label>
+              <input
+                type="text"
+                value={copyScriptName}
+                onChange={(e) => setCopyScriptName(e.target.value)}
+                className="w-full px-4 py-3 border-2 border-purple-200 rounded-xl focus:ring-3 focus:ring-purple-500/20 focus:border-purple-500 transition-all duration-200 backdrop-blur-sm bg-white/80 hover:border-purple-300"
+                placeholder="복사할 스크립트의 새 이름을 입력하세요"
+                maxLength={255}
+                disabled={isCopying}
+              />
+              <div className="mt-2 text-sm text-gray-500">
+                {copyScriptName.length}/255자
+              </div>
+            </div>
+            
+            <div className="flex space-x-3">
+              <button
+                onClick={closeCopyModal}
+                disabled={isCopying}
+                className="flex-1 px-4 py-3 text-sm font-bold text-gray-600 bg-gradient-to-r from-gray-50 to-gray-100 border-2 border-gray-200 rounded-xl hover:from-gray-100 hover:to-gray-200 hover:border-gray-300 hover:text-gray-700 transition-all duration-200 transform hover:scale-105 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:transform-none"
+              >
+                취소
+              </button>
+              <button
+                onClick={executeCopyScript}
+                disabled={isCopying || !copyScriptName.trim()}
+                className="flex-1 px-4 py-3 text-sm font-bold text-white bg-gradient-to-r from-purple-500 to-pink-600 border-2 border-purple-500 rounded-xl hover:from-purple-600 hover:to-pink-700 hover:border-purple-600 transition-all duration-200 transform hover:scale-105 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:transform-none"
+              >
+                {isCopying ? (
+                  <div className="flex items-center justify-center">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    복사 중...
+                  </div>
+                ) : (
+                  '📋 복사하기'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 } 

@@ -39,7 +39,7 @@ export async function PUT(
 
     // 1. 고객군 존재 여부 확인
     const [customerGroups] = await pool.execute<CustomerGroup[]>(
-      'SELECT id, group_name, status FROM customer_groups WHERE id = ? AND use_yn = "Y"',
+      'SELECT id, group_name, status FROM customer_groups WHERE id = ? AND del_yn = "N"',
       [customerGroupId]
     );
 
@@ -153,7 +153,7 @@ export async function GET(
 
     // 고객군 상태 조회
     const [customerGroups] = await pool.execute<CustomerGroup[]>(
-      'SELECT id, group_name, status FROM customer_groups WHERE id = ? AND use_yn = "Y"',
+      'SELECT id, group_name, status FROM customer_groups WHERE id = ? AND del_yn = "N"',
       [customerGroupId]
     );
 

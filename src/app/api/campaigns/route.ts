@@ -115,10 +115,10 @@ export async function GET(request: NextRequest) {
     const allStats = statusCounts as any[];
     const statusCountsMap: {[key: string]: number} = {};
     allStats.forEach(row => {
-      statusCountsMap[row.status] = row.count;
+      statusCountsMap[row.status] = Number(row.count) || 0;
     });
 
-    const totalCamp = allStats.reduce((sum, row) => sum + row.count, 0);
+    const totalCamp = allStats.reduce((sum, row) => sum + (Number(row.count) || 0), 0);
     const runningCamp = statusCountsMap['RUNNING'] || 0;
     const approvalCamp = statusCountsMap['PENDING_APPROVAL'] || 0;
     const completedCamp = statusCountsMap['COMPLETED'] || 0;
@@ -252,6 +252,13 @@ export async function POST(request: NextRequest) {
         VALUES (?, ?)
         ON DUPLICATE KEY UPDATE updated_at = CURRENT_TIMESTAMP
       `, [campaignId, scripts]);
+    }
+
+    // 5. 고객군 테이블 사용 처리 (customer_groups 테이블)
+    if (target_customer_groups) {
+      await connection.execute(`
+        UPDATE customer_groups SET use_yn = 'Y' WHERE id = ?
+      `, [target_customer_groups]);
     }
 
     await connection.commit();

@@ -49,9 +49,10 @@ export async function GET(
     
     // 2. 관련 데이터 조회
     const [customerGroupRows] = await pool.execute(`
-      SELECT customer_group_id 
-      FROM campaign_customer_groups 
-      WHERE campaign_id = ?
+      SELECT B.customer_group_id 
+      FROM customer_groups A
+      INNER JOIN campaign_customer_groups B ON A.id = B.customer_group_id
+      WHERE B.campaign_id = ?
     `, [campaignId]);
 
     const [offerRows] = await pool.execute(`
@@ -177,6 +178,14 @@ export async function PUT(
     await connection.execute(`DELETE FROM campaign_customer_groups WHERE campaign_id = ?`, [campaignId]);
     await connection.execute(`DELETE FROM campaign_offers WHERE campaign_id = ?`, [campaignId]);
     await connection.execute(`DELETE FROM campaign_scripts WHERE campaign_id = ?`, [campaignId]);
+    await connection.execute(`
+      UPDATE customer_groups AS A
+      , (SELECT customer_group_id FROM campaign_customer_groups WHERE campaign_id = ?) B
+      SET A.use_yn = 'N' 
+      WHERE 1=1
+      AND A.id = B.customer_group_id
+    `, [campaignId]);
+    
 
     // 3. 새로운 관계 데이터 저장
     if (target_customer_groups) {
@@ -198,6 +207,12 @@ export async function PUT(
         INSERT INTO campaign_scripts (campaign_id, script_id) 
         VALUES (?, ?)
       `, [campaignId, scripts]);
+    }
+
+    if (target_customer_groups) {
+      await connection.execute(`
+        UPDATE customer_groups SET use_yn = 'Y' WHERE id = ?
+      `, [target_customer_groups]);
     }
 
     // 4. 상태가 변경된 경우 히스토리 저장

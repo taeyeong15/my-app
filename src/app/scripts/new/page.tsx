@@ -49,10 +49,13 @@ export default function NewScriptPage() {
     }
   });
 
-  const [currentStep, setCurrentStep] = useState(1);
+  const [currentStep, setCurrentStep] = useState(2); // 2단계로 시작
   const totalSteps = 4;
   const [newVariable, setNewVariable] = useState('');
   const [previewMode, setPreviewMode] = useState(false);
+  const [isTestSendModalOpen, setIsTestSendModalOpen] = useState(false);
+  const [testPhoneNumber, setTestPhoneNumber] = useState('');
+  const [isTestSending, setIsTestSending] = useState(false);
 
   useEffect(() => {
     const checkAuth = () => {
@@ -176,6 +179,35 @@ export default function NewScriptPage() {
 
   const nextStep = () => setCurrentStep(prev => Math.min(prev + 1, totalSteps));
   const prevStep = () => setCurrentStep(prev => Math.max(prev - 1, 1));
+
+  const handleTestSend = async () => {
+    if (!testPhoneNumber.trim()) {
+      alert('핸드폰 번호를 입력해주세요.');
+      return;
+    }
+
+    // 핸드폰 번호 형식 검증
+    const phoneRegex = /^01[0-9]-?[0-9]{4}-?[0-9]{4}$/;
+    if (!phoneRegex.test(testPhoneNumber.replace(/-/g, ''))) {
+      alert('올바른 핸드폰 번호 형식을 입력해주세요.');
+      return;
+    }
+
+    setIsTestSending(true);
+    try {
+      // TODO: 실제 테스트 발송 API 호출
+      await new Promise(resolve => setTimeout(resolve, 2000)); // 임시 딜레이
+      
+      alert('테스트 메시지가 성공적으로 발송되었습니다.');
+      setIsTestSendModalOpen(false);
+      setTestPhoneNumber('');
+    } catch (error) {
+      console.error('테스트 발송 실패:', error);
+      alert('테스트 발송에 실패했습니다.');
+    } finally {
+      setIsTestSending(false);
+    }
+  };
 
   const scriptTypes = [
     { value: 'email', label: '이메일', description: '이메일 마케팅 메시지', icon: '📧' },
@@ -342,119 +374,163 @@ export default function NewScriptPage() {
 
       case 2:
         return (
-          <div className="space-y-8">
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">메시지 내용</h3>
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div className="lg:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">스크립트 내용 *</label>
-                  <textarea
-                    name="content"
-                    value={formData.content}
-                    onChange={(e) => handleInputChange('content', e.target.value)}
-                    rows={12}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors font-mono text-sm"
-                    placeholder="메시지 내용을 입력하세요. 변수는 {{변수명}} 형태로 작성합니다."
-                    required
-                  />
-                  <div className="mt-2 text-sm text-gray-500">
-                    문자 수: {formData.content.length}
-                    {formData.type === 'sms' && (
-                      <span className={formData.content.length > 90 ? 'text-orange-600' : ''}>
-                        {' '}(SMS 권장: 90자 이하)
-                      </span>
-                    )}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* 왼쪽: 스크립트 작성 */}
+            <div className="space-y-8">
+              {/* 스크립트 제목 */}
+              <div className="bg-gradient-to-br from-white to-emerald-50/30 rounded-2xl shadow-xl border border-emerald-100/50 p-6 hover:shadow-2xl transition-all duration-300">
+                <div className="flex items-center space-x-3 mb-4">
+                  <div className="w-8 h-8 bg-gradient-to-r from-emerald-500 to-teal-600 rounded-lg flex items-center justify-center">
+                    <span className="text-white text-sm font-bold">📝</span>
                   </div>
+                  <h3 className="text-lg font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">스크립트 제목</h3>
                 </div>
+                
+                <input
+                  type="text"
+                  value={formData.subject || ''}
+                  onChange={(e) => handleInputChange('subject', e.target.value)}
+                  className="w-full px-4 py-3 border-2 border-emerald-200 rounded-xl focus:ring-3 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all duration-200 backdrop-blur-sm bg-white/80 hover:border-emerald-300"
+                  placeholder="예: 신규 고객 환영 메시지"
+                />
+              </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">변수 관리</label>
-                  <div className="space-y-3">
-                    <div className="flex space-x-2">
-                      <input
-                        type="text"
-                        value={newVariable}
-                        onChange={(e) => setNewVariable(e.target.value)}
-                        placeholder="변수명 입력"
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors text-sm"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            addVariable();
-                          }
-                        }}
-                      />
-                      <button
-                        type="button"
-                        onClick={addVariable}
-                        className="px-3 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
-                      >
-                        추가
-                      </button>
-                    </div>
-
-                    <div className="space-y-2 max-h-48 overflow-y-auto">
-                      {formData.variables.map((variable, index) => (
-                        <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
-                          <button
-                            type="button"
-                            onClick={() => insertVariable(variable)}
-                            className="text-sm text-blue-600 hover:text-blue-800 font-mono"
-                          >
-                            {`{{${variable}}}`}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => removeVariable(variable)}
-                            className="text-red-600 hover:text-red-800 text-sm"
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-
-                    {formData.variables.length === 0 && (
-                      <div className="text-sm text-gray-500 text-center py-4">
-                        변수를 추가하여 개인화된 메시지를 만들어보세요
-                      </div>
-                    )}
+              {/* 스크립트 내용 */}
+              <div className="bg-gradient-to-br from-white to-emerald-50/30 rounded-2xl shadow-xl border border-emerald-100/50 p-6 hover:shadow-2xl transition-all duration-300">
+                <div className="flex items-center space-x-3 mb-4">
+                  <div className="w-8 h-8 bg-gradient-to-r from-emerald-500 to-teal-600 rounded-lg flex items-center justify-center">
+                    <span className="text-white text-sm font-bold">💬</span>
                   </div>
+                  <h3 className="text-lg font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">스크립트 내용</h3>
+                </div>
+                
+                <textarea
+                  name="content"
+                  value={formData.content}
+                  onChange={(e) => handleInputChange('content', e.target.value)}
+                  rows={10}
+                  className="w-full px-4 py-3 border-2 border-emerald-200 rounded-xl focus:ring-3 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all duration-200 backdrop-blur-sm resize-none bg-white/80 hover:border-emerald-300 font-mono text-sm"
+                  placeholder="안녕하세요 {{고객명}}님! 
+저희 {{회사명}}에서 특별 이벤트를 진행하고 있습니다.
+{{상품명}}을 {{할인율}}% 할인된 가격으로 만나보세요!
+
+※ 변수는 {{변수명}} 형태로 입력하세요."
+                  required
+                />
+                <div className="mt-2 text-sm text-gray-500">
+                  문자 수: {formData.content.length}
+                  {formData.type === 'sms' && (
+                    <span className={formData.content.length > 90 ? 'text-orange-600' : ''}>
+                      {' '}(SMS 권장: 90자 이하)
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
 
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-900">미리보기</h3>
-                <button
-                  type="button"
-                  onClick={() => setPreviewMode(!previewMode)}
-                  className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
-                    previewMode ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  {previewMode ? '편집 모드' : '미리보기 모드'}
-                </button>
-              </div>
-              
-              <div className="p-4 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
-                {previewMode ? (
-                  <div className="space-y-2">
-                    {formData.subject && (
-                      <div className="font-semibold text-gray-900">
-                        제목: {formData.subject.replace(/{{(\w+)}}/g, (match, variable) => getVariablePlaceholder(variable))}
+            {/* 오른쪽: 개인화 치환 변수 + 미리보기 */}
+            <div className="flex flex-col h-full">
+              {/* 개인화 치환 변수 */}
+              <div className="bg-gradient-to-br from-white to-blue-50/30 rounded-2xl shadow-xl border border-blue-100/50 p-6 mb-6 flex-0">
+                <div className="flex items-center space-x-3 mb-4">
+                  <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
+                    <span className="text-white text-sm font-bold">🔧</span>
+                  </div>
+                  <h3 className="text-lg font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">개인화 치환 변수</h3>
+                </div>
+                
+                <div className="space-y-3">
+                  <div className="flex space-x-2">
+                    <input
+                      type="text"
+                      value={newVariable}
+                      onChange={(e) => setNewVariable(e.target.value)}
+                      placeholder="변수명 입력"
+                      className="flex-1 px-3 py-2 border-2 border-blue-200 rounded-lg focus:ring-3 focus:ring-blue-500/20 focus:border-blue-500 transition-all duration-200 text-sm bg-white/80"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          addVariable();
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={addVariable}
+                      className="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-sm rounded-lg hover:from-blue-600 hover:to-indigo-700 transition-all duration-200 shadow-lg"
+                    >
+                      추가
+                    </button>
+                  </div>
+
+                  <div className="space-y-2 max-h-32 overflow-y-auto">
+                    {formData.variables.map((variable, index) => (
+                      <div key={index} className="flex items-center justify-between p-2 bg-blue-50 rounded-lg border border-blue-200">
+                        <button
+                          type="button"
+                          onClick={() => insertVariable(variable)}
+                          className="text-sm text-blue-700 hover:text-blue-900 font-mono font-medium"
+                        >
+                          {`{{${variable}}}`}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeVariable(variable)}
+                          className="text-red-600 hover:text-red-800 text-sm font-bold"
+                        >
+                          ×
+                        </button>
                       </div>
-                    )}
-                    <div className="text-gray-700 whitespace-pre-wrap">
-                      {generatePreview()}
+                    ))}
+                  </div>
+
+                  {formData.variables.length === 0 && (
+                    <div className="text-sm text-gray-500 text-center py-4 bg-gray-50 rounded-lg">
+                      변수를 추가하여 개인화된 메시지를 만들어보세요
                     </div>
+                  )}
+                </div>
+              </div>
+
+              {/* 미리보기 */}
+              <div className="bg-gradient-to-br from-white to-purple-50/30 rounded-2xl shadow-xl border border-purple-100/50 p-6 flex-1 flex flex-col">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-8 h-8 bg-gradient-to-r from-purple-500 to-pink-600 rounded-lg flex items-center justify-center">
+                      <span className="text-white text-sm font-bold">👀</span>
+                    </div>
+                    <h3 className="text-lg font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">미리보기</h3>
                   </div>
-                ) : (
-                  <div className="text-gray-500 text-center py-8">
-                    미리보기 모드를 활성화하여 실제 메시지가 어떻게 보일지 확인해보세요
-                  </div>
-                )}
+                  
+                  {/* 테스트 발송 버튼 */}
+                  <button
+                    type="button"
+                    onClick={() => setIsTestSendModalOpen(true)}
+                    className="px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg hover:from-green-600 hover:to-emerald-700 transition-all duration-200 shadow-lg hover:shadow-xl flex items-center space-x-2"
+                  >
+                    <span className="text-sm">📱</span>
+                    <span className="font-medium">테스트 발송</span>
+                  </button>
+                </div>
+                
+                <div className="flex-1 bg-gray-50 rounded-lg p-4 text-gray-700 whitespace-pre-wrap border border-gray-200">
+                  {formData.content ? (
+                    <div className="space-y-2">
+                      {formData.subject && (
+                        <div className="font-semibold text-gray-900 border-b border-gray-200 pb-2">
+                          제목: {formData.subject.replace(/{{(\w+)}}/g, (match, variable) => getVariablePlaceholder(variable))}
+                        </div>
+                      )}
+                      <div className="text-gray-700">
+                        {formData.content.replace(/{{(\w+)}}/g, (match, variable) => getVariablePlaceholder(variable))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-gray-500 text-center py-8">
+                      스크립트 내용을 입력하면 미리보기가 표시됩니다.
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -742,6 +818,109 @@ export default function NewScriptPage() {
             </div>
           </div>
         </form>
+
+        {/* 테스트 발송 모달 */}
+        {isTestSendModalOpen && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 animate-in zoom-in-95 duration-200">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-bold text-gray-900">테스트 발송</h3>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsTestSendModalOpen(false);
+                    setTestPhoneNumber('');
+                  }}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <span className="text-2xl">×</span>
+                </button>
+              </div>
+
+              <div className="space-y-6">
+                {/* 발송 정보 */}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="flex items-center space-x-3 mb-3">
+                    <div className="w-6 h-6 bg-purple-500 rounded-full flex items-center justify-center">
+                      <span className="text-white text-xs">📧</span>
+                    </div>
+                    <span className="font-medium text-gray-900">이메일</span>
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    <div className="mb-1">제목: {formData.subject || '제목 없음'}</div>
+                    <div className="line-clamp-2">내용: {formData.content.substring(0, 50)}...</div>
+                  </div>
+                </div>
+
+                {/* 핸드폰 번호 입력 */}
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 mb-3">
+                    📱 테스트 발송할 핸드폰 번호
+                  </label>
+                  <input
+                    type="tel"
+                    value={testPhoneNumber}
+                    onChange={(e) => setTestPhoneNumber(e.target.value)}
+                    placeholder="010-1234-5678"
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-3 focus:ring-purple-500/20 focus:border-purple-500 transition-all duration-200"
+                    disabled={isTestSending}
+                  />
+                  <p className="text-xs text-gray-500 mt-2">
+                    예시: 010-1234-5678 또는 01012345678
+                  </p>
+                </div>
+
+                {/* 주의사항 */}
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                  <div className="flex items-start space-x-2">
+                    <span className="text-yellow-600 text-sm">⚠️</span>
+                    <div className="text-sm text-yellow-800">
+                      <p className="font-medium mb-1">테스트 발송 주의사항</p>
+                      <ul className="text-xs space-y-1">
+                        <li>• 실제 메시지가 발송됩니다</li>
+                        <li>• 발송 후 취소할 수 없습니다</li>
+                        <li>• 본인 또는 테스트용 번호를 사용하세요</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 버튼 */}
+                <div className="flex space-x-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsTestSendModalOpen(false);
+                      setTestPhoneNumber('');
+                    }}
+                    disabled={isTestSending}
+                    className="flex-1 px-4 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
+                  >
+                    취소
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleTestSend}
+                    disabled={isTestSending || !testPhoneNumber.trim()}
+                    className="flex-1 px-4 py-3 bg-gradient-to-r from-purple-500 to-pink-600 text-white rounded-lg hover:from-purple-600 hover:to-pink-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+                  >
+                    {isTestSending ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        <span>발송 중...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>📤</span>
+                        <span>테스트 발송</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </Layout>
   );

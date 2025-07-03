@@ -144,12 +144,24 @@ function CustomerSegmentContent() {
 
   useEffect(() => {
     checkAuth();
-    loadCommonCodes();
-    if (groupId && mode !== 'create') {
-      fetchCustomerGroup();
-    } else {
-      setIsLoading(false);
-    }
+    const initializeData = async () => {
+      try {
+        // 1. 먼저 공통코드를 로드
+        await loadCommonCodes();
+        
+        // 2. 그 다음에 고객군 데이터를 로드 (수정/상세보기 모드인 경우)
+        if (groupId && mode !== 'create') {
+          await fetchCustomerGroup();
+        } else {
+          setIsLoading(false);
+        }
+      } catch (error) {
+        console.error('데이터 초기화 실패:', error);
+        setIsLoading(false);
+      }
+    };
+    
+    initializeData();
   }, [groupId, mode]);
 
   // 공통코드 로드 함수 추가
@@ -207,7 +219,7 @@ function CustomerSegmentContent() {
       const response = await fetch(`/api/customer-groups/${groupId}`);
       if (response.ok) {
         const data = await response.json();
-        const group = data.customerGroup;
+        const group = data.group;
         
         // 권한 확인
         if (!checkEditPermission(group)) {
@@ -216,28 +228,111 @@ function CustomerSegmentContent() {
           return;
         }
         
+        // 기본 폼 데이터 구조
+        let formCriteria = {
+          age: { min: '', max: '' },
+          gender: { value: '' },
+          marriage_status: { value: '' },
+          member_grade: { value: '' },
+          marketing_agree_yn: { value: '' },
+          foreigner_yn: { value: '' },
+          member_status: { value: '' },
+          sms_agree_yn: { value: '' },
+          email_agree_yn: { value: '' },
+          kakao_agree_yn: { value: '' },
+          app_push_agree_yn: { value: '' },
+          address: { value: '' },
+          anniversary_type: { value: '' },
+          email_domain: { value: '' },
+        };
+        
+        // conditions 컬럼에서 저장된 조건 데이터 복원
+        let savedConditions = null;
+        if (group.conditions) {
+          try {
+            if (typeof group.conditions === 'string') {
+              savedConditions = JSON.parse(group.conditions);
+            } else {
+              savedConditions = group.conditions;
+            }
+            
+            console.log('🔍 원본 조건 데이터:', group.conditions);
+            console.log('🔍 파싱된 조건 데이터:', savedConditions);
+            
+            // 저장된 조건을 폼 데이터에 적용
+            if (savedConditions) {
+              console.log('🔍 savedConditions 전체 구조:', JSON.stringify(savedConditions, null, 2));
+              
+              // 실제 조건 데이터는 savedConditions.criteria 안에 있음
+              const actualCriteria = savedConditions.criteria || savedConditions;
+              console.log('🔍 실제 조건 데이터:', JSON.stringify(actualCriteria, null, 2));
+              
+              // 각 필드별로 저장된 값의 구조를 확인하고 안전하게 처리
+              Object.keys(actualCriteria).forEach(key => {
+                const savedValue = actualCriteria[key];
+                console.log(`🔍 ${key} 저장된 원본 값:`, savedValue, typeof savedValue);
+                
+                if (key === 'age' && savedValue && typeof savedValue === 'object') {
+                  // 나이 조건 처리
+                  if (savedValue.min !== undefined) {
+                    formCriteria.age.min = String(savedValue.min);
+                    console.log(`✅ age.min 설정: "${savedValue.min}" -> "${formCriteria.age.min}"`);
+                  }
+                  if (savedValue.max !== undefined) {
+                    formCriteria.age.max = String(savedValue.max);
+                    console.log(`✅ age.max 설정: "${savedValue.max}" -> "${formCriteria.age.max}"`);
+                  }
+                } else if (formCriteria.hasOwnProperty(key) && key !== 'age') {
+                  // 다른 조건들 처리
+                  const targetField = (formCriteria as any)[key];
+                  
+                  if (targetField && typeof targetField === 'object' && targetField.hasOwnProperty('value')) {
+                    let valueToSet = '';
+                    
+                    // 저장된 값이 객체이고 value 속성이 있는 경우
+                    if (savedValue && typeof savedValue === 'object' && savedValue.hasOwnProperty('value')) {
+                      valueToSet = String(savedValue.value || '');
+                      console.log(`✅ ${key} 설정 (객체에서 value 추출): "${savedValue.value}" -> "${valueToSet}"`);
+                    }
+                    // 저장된 값이 직접 값인 경우
+                    else if (savedValue !== null && savedValue !== undefined) {
+                      valueToSet = String(savedValue);
+                      console.log(`✅ ${key} 설정 (직접 값): "${savedValue}" -> "${valueToSet}"`);
+                    }
+                    
+                    targetField.value = valueToSet;
+                    console.log(`✅ ${key} 최종 설정 완료: "${targetField.value}"`);
+                  }
+                }
+              });
+              
+              console.log('🎯 조건 매핑 완료 후 formCriteria:', JSON.stringify(formCriteria, null, 2));
+            }
+          } catch (error) {
+            console.error('❌ 저장된 조건 데이터 파싱 실패:', error);
+            showToast('저장된 조건 데이터를 불러오는데 실패했습니다.', 'warning');
+          }
+        }
+        
+        console.log('🎯 최종 폼 조건 데이터:', formCriteria);
+        
         // 폼 데이터 설정
-        setFormData({
+        const newFormData = {
           name: group.name || '',
           description: group.description || '',
-          criteria: {
-            age: { min: '', max: '' },
-            gender: { value: '' },
-            marriage_status: { value: '' },
-            member_grade: { value: '' },
-            marketing_agree_yn: { value: '' },
-            foreigner_yn: { value: '' },
-            member_status: { value: '' },
-            sms_agree_yn: { value: '' },
-            email_agree_yn: { value: '' },
-            kakao_agree_yn: { value: '' },
-            app_push_agree_yn: { value: '' },
-            address: { value: '' },
-            anniversary_type: { value: '' },
-            email_domain: { value: '' },
-          },
-          tags: []
-        });
+          criteria: formCriteria,
+          tags: group.tags ? (Array.isArray(group.tags) ? group.tags : []) : 
+                (savedConditions?.metadata?.tags && Array.isArray(savedConditions.metadata.tags) ? savedConditions.metadata.tags : [])
+        };
+        
+        console.log('📝 설정할 폼 데이터:', newFormData);
+        setFormData(newFormData);
+        
+        // 상태 업데이트 후 다시 한 번 확인
+        setTimeout(() => {
+          console.log('⏰ 상태 업데이트 후 현재 formData:', formData);
+        }, 100);
+        
       } else {
         throw new Error('고객군 정보를 불러올 수 없습니다.');
       }
@@ -359,14 +454,19 @@ function CustomerSegmentContent() {
           name: formData.name,
           description: formData.description,
           criteria: formData.criteria,
-          tags: formData.tags
+          tags: formData.tags,
+          created_dept: '마케팅팀',
+          created_emp_no: currentUser?.email || 'SYSTEM',
+          generate_immediately: false // 조건만 저장, 나중에 생성
         }),
       });
 
       if (response.ok) {
         const result = await response.json();
         showToast(
-          mode === 'edit' ? '고객군이 성공적으로 수정되었습니다.' : '고객군이 성공적으로 생성되었습니다.', 
+          mode === 'edit' ? 
+            '고객군이 성공적으로 수정되었습니다.' : 
+            '고객군 조건이 성공적으로 저장되었습니다. 나중에 생성할 수 있습니다.', 
           'success'
         );
         router.push('/customers');
@@ -378,6 +478,55 @@ function CustomerSegmentContent() {
       console.error('고객군 저장 실패:', error);
       showToast(
         error instanceof Error ? error.message : '고객군 저장에 실패했습니다.', 
+        'error'
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleGenerateImmediately = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!formData.name.trim()) {
+      showToast('고객군명을 입력해주세요.', 'error');
+      return;
+    }
+
+    setIsSubmitting(true);
+    
+    try {
+      const response = await fetch('/api/customer-groups', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: formData.name,
+          description: formData.description,
+          criteria: formData.criteria,
+          tags: formData.tags,
+          created_dept: '마케팅팀',
+          created_emp_no: currentUser?.email || 'SYSTEM',
+          generate_immediately: true // 즉시 생성
+        }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        showToast(
+          '고객군 조건이 저장되고 생성이 시작되었습니다.', 
+          'success'
+        );
+        router.push('/customers');
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || '요청 처리에 실패했습니다.');
+      }
+    } catch (error) {
+      console.error('고객군 생성 실패:', error);
+      showToast(
+        error instanceof Error ? error.message : '고객군 생성에 실패했습니다.', 
         'error'
       );
     } finally {
@@ -399,6 +548,8 @@ function CustomerSegmentContent() {
       </div>
     );
   }
+
+  const isViewMode = mode === 'view';
 
   return (
     <Layout title={getPageTitle()} subtitle={getPageSubtitle()}>
@@ -464,21 +615,27 @@ function CustomerSegmentContent() {
               <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full font-medium">선택사항</span>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              
-              {/* 나이 조건 */}
-              <div className="relative p-6 border-2 border-gray-200 rounded-2xl transition-all duration-300 hover:border-blue-300 bg-white/70 backdrop-blur-sm hover:shadow-md">
-                <div className="flex items-center space-x-3 mb-4">
-                  <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                    <span className="text-blue-600 text-sm font-bold">📅</span>
+            {/* 기본 조건 설정 */}
+            <div className="mb-8">
+              <h4 className="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                <span className="w-6 h-6 bg-blue-100 rounded-lg flex items-center justify-center mr-2">
+                  <span className="text-blue-600 text-xs font-bold">👥</span>
+                </span>
+                기본 정보
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {/* 나이 조건 */}
+                <div className="relative p-6 border-2 border-gray-200 rounded-2xl transition-all duration-300 hover:border-blue-300 bg-white/70 backdrop-blur-sm hover:shadow-md">
+                  <div className="flex items-center space-x-3 mb-4">
+                    <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                      <span className="text-blue-600 text-sm font-bold">📅</span>
+                    </div>
+                    <span className="font-bold text-gray-900">나이 조건</span>
                   </div>
-                  <span className="font-bold text-gray-900">나이 조건</span>
-                </div>
-                
-                <div className="space-y-4">
+                  
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-2">최소 나이</label>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">최소 나이</label>
                       <input
                         type="number"
                         value={formData.criteria.age.min}
@@ -491,7 +648,7 @@ function CustomerSegmentContent() {
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-2">최대 나이</label>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">최대 나이</label>
                       <input
                         type="number"
                         value={formData.criteria.age.max}
@@ -505,436 +662,447 @@ function CustomerSegmentContent() {
                     </div>
                   </div>
                 </div>
-              </div>
 
-              {/* 성별 조건 */}
-              <div className="relative p-6 border-2 border-gray-200 rounded-2xl transition-all duration-300 hover:border-purple-300 bg-white/70 backdrop-blur-sm hover:shadow-md">
-                <div className="flex items-center space-x-3 mb-4">
-                  <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
-                    <span className="text-purple-600 text-sm font-bold">👥</span>
+                {/* 회원 등급 조건 */}
+                <div className="relative p-6 border-2 border-gray-200 rounded-2xl transition-all duration-300 hover:border-yellow-300 bg-white/70 backdrop-blur-sm hover:shadow-md">
+                  <div className="flex items-center space-x-3 mb-4">
+                    <div className="w-8 h-8 bg-yellow-100 rounded-lg flex items-center justify-center">
+                      <span className="text-yellow-600 text-sm font-bold">⭐</span>
+                    </div>
+                    <span className="font-bold text-gray-900">회원 등급</span>
                   </div>
-                  <span className="font-bold text-gray-900">성별 조건</span>
+                  
+                  <div>
+                    <select
+                      value={formData.criteria.member_grade.value}
+                      onChange={(e) => handleCriteriaChange('member_grade', 'value', e.target.value)}
+                      disabled={isFieldDisabled()}
+                      className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-transparent text-sm"
+                    >
+                      <option value="">전체 등급</option>
+                      {commonCodes.memberGrade.map((code) => (
+                        <option key={code.code} value={code.code}>
+                          {code.code === 'VIP' ? '💎' : code.code === 'GOLD' ? '🥇' : code.code === 'SILVER' ? '🥈' : '🥉'} {code.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* 주소 조건 */}
+                <div className="relative p-6 border-2 border-gray-200 rounded-2xl transition-all duration-300 hover:border-cyan-300 bg-white/70 backdrop-blur-sm hover:shadow-md">
+                  <div className="flex items-center space-x-3 mb-4">
+                    <div className="w-8 h-8 bg-cyan-100 rounded-lg flex items-center justify-center">
+                      <span className="text-cyan-600 text-sm font-bold">📍</span>
+                    </div>
+                    <span className="font-bold text-gray-900">주소 (시/도)</span>
+                  </div>
+                  
+                  <div>
+                    <select
+                      value={formData.criteria.address.value}
+                      onChange={(e) => handleCriteriaChange('address', 'value', e.target.value)}
+                      disabled={isFieldDisabled()}
+                      className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-sm"
+                    >
+                      <option value="">전체 지역</option>
+                      {commonCodes.address.map((code) => (
+                        <option key={code.code} value={code.code}>
+                          {code.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* 기념일 유형 조건 */}
+                <div className="relative p-6 border-2 border-gray-200 rounded-2xl transition-all duration-300 hover:border-rose-300 bg-white/70 backdrop-blur-sm hover:shadow-md">
+                  <div className="flex items-center space-x-3 mb-4">
+                    <div className="w-8 h-8 bg-rose-100 rounded-lg flex items-center justify-center">
+                      <span className="text-rose-600 text-sm font-bold">🎉</span>
+                    </div>
+                    <span className="font-bold text-gray-900">기념일 유형</span>
+                  </div>
+                  
+                  <div>
+                    <select
+                      value={formData.criteria.anniversary_type.value}
+                      onChange={(e) => handleCriteriaChange('anniversary_type', 'value', e.target.value)}
+                      disabled={isFieldDisabled()}
+                      className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm"
+                    >
+                      <option value="">전체 기념일</option>
+                      {commonCodes.anniversaryType.map((code) => (
+                        <option key={code.code} value={code.code}>
+                          {code.code === 'BIRTHDAY' ? '🎂' : 
+                           code.code === 'WEDDING' ? '💒' : 
+                           code.code === 'JOIN' ? '🎊' : 
+                           code.code === 'FIRST_PURCHASE' ? '🛍️' : '🎁'} {code.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* 이메일 도메인 조건 */}
+                <div className="relative p-6 border-2 border-gray-200 rounded-2xl transition-all duration-300 hover:border-teal-300 bg-white/70 backdrop-blur-sm hover:shadow-md">
+                  <div className="flex items-center space-x-3 mb-4">
+                    <div className="w-8 h-8 bg-teal-100 rounded-lg flex items-center justify-center">
+                      <span className="text-teal-600 text-sm font-bold">📧</span>
+                    </div>
+                    <span className="font-bold text-gray-900">이메일 도메인</span>
+                  </div>
+                  
+                  <div>
+                    <select
+                      value={formData.criteria.email_domain.value}
+                      onChange={(e) => handleCriteriaChange('email_domain', 'value', e.target.value)}
+                      disabled={isFieldDisabled()}
+                      className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
+                    >
+                      <option value="">전체 도메인</option>
+                      {commonCodes.emailDomain.map((code) => (
+                        <option key={code.code} value={code.code}>
+                          {code.code === 'GMAIL' ? '📬' : 
+                           code.code === 'NAVER' ? '🟢' : 
+                           code.code === 'DAUM' ? '🟡' : 
+                           code.code === 'KAKAO' ? '💬' : 
+                           code.code === 'COMPANY' ? '🏢' : '📮'} {code.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
                 
-                <div className="space-y-3">
-                  <label className="flex items-center p-3 border border-gray-200 rounded-lg hover:bg-purple-50 cursor-pointer transition-colors">
-                    <input
-                      type="radio"
-                      name="gender"
-                      value=""
-                      checked={formData.criteria.gender.value === ''}
-                      onChange={(e) => handleCriteriaChange('gender', 'value', e.target.value)}
-                      disabled={isFieldDisabled()}
-                      className="mr-3 text-purple-600"
-                    />
-                    <span className="text-sm">전체</span>
-                  </label>
-                  {commonCodes.gender.map((code) => (
-                    <label key={code.code} className="flex items-center p-3 border border-gray-200 rounded-lg hover:bg-purple-50 cursor-pointer transition-colors">
+                {/* 성별 조건 - 가로 배치 */}
+                <div className="relative p-6 border-2 border-gray-200 rounded-2xl transition-all duration-300 hover:border-purple-300 bg-white/70 backdrop-blur-sm hover:shadow-md">
+                  <div className="flex items-center space-x-3 mb-4">
+                    <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
+                      <span className="text-purple-600 text-sm font-bold">👥</span>
+                    </div>
+                    <span className="font-bold text-gray-900">성별 조건</span>
+                  </div>
+                  
+                  <div className="grid grid-cols-3 gap-2">
+                    <label className="flex items-center p-2 border border-gray-200 rounded-lg hover:bg-purple-50 cursor-pointer transition-colors">
                       <input
                         type="radio"
                         name="gender"
-                        value={code.code}
-                        checked={formData.criteria.gender.value === code.code}
+                        value=""
+                        checked={formData.criteria.gender.value === ''}
                         onChange={(e) => handleCriteriaChange('gender', 'value', e.target.value)}
                         disabled={isFieldDisabled()}
-                        className="mr-3 text-purple-600"
+                        className="mr-2 text-purple-600"
                       />
-                      <span className="text-sm">{code.code === 'M' ? '👨' : '👩'} {code.name}</span>
+                      <span className="text-sm">전체</span>
                     </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* 혼인 상태 조건 */}
-              <div className="relative p-6 border-2 border-gray-200 rounded-2xl transition-all duration-300 hover:border-green-300 bg-white/70 backdrop-blur-sm hover:shadow-md">
-                <div className="flex items-center space-x-3 mb-4">
-                  <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
-                    <span className="text-green-600 text-sm font-bold">💑</span>
+                    {commonCodes.gender.map((code) => (
+                      <label key={code.code} className="flex items-center p-2 border border-gray-200 rounded-lg hover:bg-purple-50 cursor-pointer transition-colors">
+                        <input
+                          type="radio"
+                          name="gender"
+                          value={code.code}
+                          checked={formData.criteria.gender.value === code.code}
+                          onChange={(e) => handleCriteriaChange('gender', 'value', e.target.value)}
+                          disabled={isFieldDisabled()}
+                          className="mr-2 text-purple-600"
+                        />
+                        <span className="text-sm">{code.code === 'M' ? '👨' : '👩'} {code.name}</span>
+                      </label>
+                    ))}
                   </div>
-                  <span className="font-bold text-gray-900">혼인 상태</span>
                 </div>
-                
-                <div className="space-y-3">
-                  <label className="flex items-center p-3 border border-gray-200 rounded-lg hover:bg-green-50 cursor-pointer transition-colors">
-                    <input
-                      type="radio"
-                      name="marriage_status"
-                      value=""
-                      checked={formData.criteria.marriage_status.value === ''}
-                      onChange={(e) => handleCriteriaChange('marriage_status', 'value', e.target.value)}
-                      disabled={isFieldDisabled()}
-                      className="mr-3 text-green-600"
-                    />
-                    <span className="text-sm">전체</span>
-                  </label>
-                  {commonCodes.marriageStatus.map((code) => (
-                    <label key={code.code} className="flex items-center p-3 border border-gray-200 rounded-lg hover:bg-green-50 cursor-pointer transition-colors">
+
+                {/* 혼인 상태 조건 - 가로 배치 */}
+                <div className="relative p-6 border-2 border-gray-200 rounded-2xl transition-all duration-300 hover:border-green-300 bg-white/70 backdrop-blur-sm hover:shadow-md">
+                  <div className="flex items-center space-x-3 mb-4">
+                    <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
+                      <span className="text-green-600 text-sm font-bold">💑</span>
+                    </div>
+                    <span className="font-bold text-gray-900">혼인 상태</span>
+                  </div>
+                  
+                  <div className="grid grid-cols-3 gap-2">
+                    <label className="flex items-center p-2 border border-gray-200 rounded-lg hover:bg-green-50 cursor-pointer transition-colors">
                       <input
                         type="radio"
                         name="marriage_status"
-                        value={code.code}
-                        checked={formData.criteria.marriage_status.value === code.code}
+                        value=""
+                        checked={formData.criteria.marriage_status.value === ''}
                         onChange={(e) => handleCriteriaChange('marriage_status', 'value', e.target.value)}
                         disabled={isFieldDisabled()}
-                        className="mr-3 text-green-600"
+                        className="mr-2 text-green-600"
                       />
-                      <span className="text-sm">{code.code === 'Y' ? '💍' : '🙋'} {code.name}</span>
+                      <span className="text-sm">전체</span>
                     </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* 회원 등급 조건 */}
-              <div className="relative p-6 border-2 border-gray-200 rounded-2xl transition-all duration-300 hover:border-yellow-300 bg-white/70 backdrop-blur-sm hover:shadow-md">
-                <div className="flex items-center space-x-3 mb-4">
-                  <div className="w-8 h-8 bg-yellow-100 rounded-lg flex items-center justify-center">
-                    <span className="text-yellow-600 text-sm font-bold">⭐</span>
-                  </div>
-                  <span className="font-bold text-gray-900">회원 등급</span>
-                </div>
-                
-                <div>
-                  <select
-                    value={formData.criteria.member_grade.value}
-                    onChange={(e) => handleCriteriaChange('member_grade', 'value', e.target.value)}
-                    disabled={isFieldDisabled()}
-                    className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-transparent text-sm"
-                  >
-                    <option value="">전체 등급</option>
-                    {commonCodes.memberGrade.map((code) => (
-                      <option key={code.code} value={code.code}>
-                        {code.code === 'VIP' ? '💎' : code.code === 'GOLD' ? '🥇' : code.code === 'SILVER' ? '🥈' : '🥉'} {code.name}
-                      </option>
+                    {commonCodes.marriageStatus.map((code) => (
+                      <label key={code.code} className="flex items-center p-2 border border-gray-200 rounded-lg hover:bg-green-50 cursor-pointer transition-colors">
+                        <input
+                          type="radio"
+                          name="marriage_status"
+                          value={code.code}
+                          checked={formData.criteria.marriage_status.value === code.code}
+                          onChange={(e) => handleCriteriaChange('marriage_status', 'value', e.target.value)}
+                          disabled={isFieldDisabled()}
+                          className="mr-2 text-green-600"
+                        />
+                        <span className="text-sm">{code.code === 'Y' ? '💍' : '🙋'} {code.name}</span>
+                      </label>
                     ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* 마케팅 동의 조건 */}
-              <div className="relative p-6 border-2 border-gray-200 rounded-2xl transition-all duration-300 hover:border-pink-300 bg-white/70 backdrop-blur-sm hover:shadow-md">
-                <div className="flex items-center space-x-3 mb-4">
-                  <div className="w-8 h-8 bg-pink-100 rounded-lg flex items-center justify-center">
-                    <span className="text-pink-600 text-sm font-bold">📢</span>
                   </div>
-                  <span className="font-bold text-gray-900">마케팅 동의</span>
                 </div>
-                
-                <div className="space-y-3">
-                  <label className="flex items-center p-3 border border-gray-200 rounded-lg hover:bg-pink-50 cursor-pointer transition-colors">
-                    <input
-                      type="radio"
-                      name="marketing_agree_yn"
-                      value=""
-                      checked={formData.criteria.marketing_agree_yn.value === ''}
-                      onChange={(e) => handleCriteriaChange('marketing_agree_yn', 'value', e.target.value)}
-                      disabled={isFieldDisabled()}
-                      className="mr-3 text-pink-600"
-                    />
-                    <span className="text-sm">전체</span>
-                  </label>
-                  {commonCodes.marketingAgree.map((code) => (
-                    <label key={code.code} className="flex items-center p-3 border border-gray-200 rounded-lg hover:bg-pink-50 cursor-pointer transition-colors">
-                      <input
-                        type="radio"
-                        name="marketing_agree_yn"
-                        value={code.code}
-                        checked={formData.criteria.marketing_agree_yn.value === code.code}
-                        onChange={(e) => handleCriteriaChange('marketing_agree_yn', 'value', e.target.value)}
-                        disabled={isFieldDisabled()}
-                        className="mr-3 text-pink-600"
-                      />
-                      <span className="text-sm">{code.code === 'Y' ? '✅' : '❌'} {code.name}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
 
-              {/* 외국인 여부 조건 */}
-              <div className="relative p-6 border-2 border-gray-200 rounded-2xl transition-all duration-300 hover:border-indigo-300 bg-white/70 backdrop-blur-sm hover:shadow-md">
-                <div className="flex items-center space-x-3 mb-4">
-                  <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center">
-                    <span className="text-indigo-600 text-sm font-bold">🌍</span>
+                {/* 외국인 여부 조건 - 가로 배치 */}
+                <div className="relative p-6 border-2 border-gray-200 rounded-2xl transition-all duration-300 hover:border-indigo-300 bg-white/70 backdrop-blur-sm hover:shadow-md">
+                  <div className="flex items-center space-x-3 mb-4">
+                    <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center">
+                      <span className="text-indigo-600 text-sm font-bold">🌍</span>
+                    </div>
+                    <span className="font-bold text-gray-900">외국인 여부</span>
                   </div>
-                  <span className="font-bold text-gray-900">외국인 여부</span>
-                </div>
-                
-                <div className="space-y-3">
-                  <label className="flex items-center p-3 border border-gray-200 rounded-lg hover:bg-indigo-50 cursor-pointer transition-colors">
-                    <input
-                      type="radio"
-                      name="foreigner_yn"
-                      value=""
-                      checked={formData.criteria.foreigner_yn.value === ''}
-                      onChange={(e) => handleCriteriaChange('foreigner_yn', 'value', e.target.value)}
-                      disabled={isFieldDisabled()}
-                      className="mr-3 text-indigo-600"
-                    />
-                    <span className="text-sm">전체</span>
-                  </label>
-                  {commonCodes.foreigner.map((code) => (
-                    <label key={code.code} className="flex items-center p-3 border border-gray-200 rounded-lg hover:bg-indigo-50 cursor-pointer transition-colors">
+                  
+                  <div className="grid grid-cols-3 gap-2">
+                    <label className="flex items-center p-2 border border-gray-200 rounded-lg hover:bg-indigo-50 cursor-pointer transition-colors">
                       <input
                         type="radio"
                         name="foreigner_yn"
-                        value={code.code}
-                        checked={formData.criteria.foreigner_yn.value === code.code}
+                        value=""
+                        checked={formData.criteria.foreigner_yn.value === ''}
                         onChange={(e) => handleCriteriaChange('foreigner_yn', 'value', e.target.value)}
                         disabled={isFieldDisabled()}
-                        className="mr-3 text-indigo-600"
+                        className="mr-2 text-indigo-600"
                       />
-                      <span className="text-sm">{code.code === 'Y' ? '🌏' : '🇰🇷'} {code.name}</span>
+                      <span className="text-sm">전체</span>
                     </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* 주소 조건 */}
-              <div className="relative p-6 border-2 border-gray-200 rounded-2xl transition-all duration-300 hover:border-cyan-300 bg-white/70 backdrop-blur-sm hover:shadow-md">
-                <div className="flex items-center space-x-3 mb-4">
-                  <div className="w-8 h-8 bg-cyan-100 rounded-lg flex items-center justify-center">
-                    <span className="text-cyan-600 text-sm font-bold">📍</span>
-                  </div>
-                  <span className="font-bold text-gray-900">주소 (시/도)</span>
-                </div>
-                
-                <div>
-                  <select
-                    value={formData.criteria.address.value}
-                    onChange={(e) => handleCriteriaChange('address', 'value', e.target.value)}
-                    disabled={isFieldDisabled()}
-                    className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent text-sm"
-                  >
-                    <option value="">전체 지역</option>
-                    {commonCodes.address.map((code) => (
-                      <option key={code.code} value={code.code}>
-                        {code.name}
-                      </option>
+                    {commonCodes.foreigner.map((code) => (
+                      <label key={code.code} className="flex items-center p-2 border border-gray-200 rounded-lg hover:bg-indigo-50 cursor-pointer transition-colors">
+                        <input
+                          type="radio"
+                          name="foreigner_yn"
+                          value={code.code}
+                          checked={formData.criteria.foreigner_yn.value === code.code}
+                          onChange={(e) => handleCriteriaChange('foreigner_yn', 'value', e.target.value)}
+                          disabled={isFieldDisabled()}
+                          className="mr-2 text-indigo-600"
+                        />
+                        <span className="text-sm">{code.code === 'Y' ? '🌏' : '🇰🇷'} {code.name}</span>
+                      </label>
                     ))}
-                  </select>
+                  </div>
                 </div>
               </div>
+            </div>
 
-              {/* 기념일 유형 조건 */}
-              <div className="relative p-6 border-2 border-gray-200 rounded-2xl transition-all duration-300 hover:border-rose-300 bg-white/70 backdrop-blur-sm hover:shadow-md">
-                <div className="flex items-center space-x-3 mb-4">
-                  <div className="w-8 h-8 bg-rose-100 rounded-lg flex items-center justify-center">
-                    <span className="text-rose-600 text-sm font-bold">🎉</span>
+            {/* 마케팅 수신 동의 조건 */}
+            <div className="mb-8">
+              <h4 className="text-lg font-bold text-gray-800 mb-4 flex items-center">
+                <span className="w-6 h-6 bg-pink-100 rounded-lg flex items-center justify-center mr-2">
+                  <span className="text-pink-600 text-xs font-bold">📢</span>
+                </span>
+                마케팅 수신 동의
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+
+                {/* 마케팅 동의 조건 - 가로 배치 */}
+                <div className="relative p-6 border-2 border-gray-200 rounded-2xl transition-all duration-300 hover:border-pink-300 bg-white/70 backdrop-blur-sm hover:shadow-md">
+                  <div className="flex items-center space-x-3 mb-4">
+                    <div className="w-8 h-8 bg-pink-100 rounded-lg flex items-center justify-center">
+                      <span className="text-pink-600 text-sm font-bold">📢</span>
+                    </div>
+                    <span className="font-bold text-gray-900">전체 마케팅</span>
                   </div>
-                  <span className="font-bold text-gray-900">기념일 유형</span>
-                </div>
-                
-                <div>
-                  <select
-                    value={formData.criteria.anniversary_type.value}
-                    onChange={(e) => handleCriteriaChange('anniversary_type', 'value', e.target.value)}
-                    disabled={isFieldDisabled()}
-                    className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-transparent text-sm"
-                  >
-                    <option value="">전체 기념일</option>
-                    {commonCodes.anniversaryType.map((code) => (
-                      <option key={code.code} value={code.code}>
-                        {code.code === 'BIRTHDAY' ? '🎂' : 
-                         code.code === 'WEDDING' ? '💒' : 
-                         code.code === 'JOIN' ? '🎊' : 
-                         code.code === 'FIRST_PURCHASE' ? '🛍️' : '🎁'} {code.name}
-                      </option>
+                  
+                  <div className="grid grid-cols-3 gap-2">
+                    <label className="flex items-center p-2 border border-gray-200 rounded-lg hover:bg-pink-50 cursor-pointer transition-colors">
+                      <input
+                        type="radio"
+                        name="marketing_agree_yn"
+                        value=""
+                        checked={formData.criteria.marketing_agree_yn.value === ''}
+                        onChange={(e) => handleCriteriaChange('marketing_agree_yn', 'value', e.target.value)}
+                        disabled={isFieldDisabled()}
+                        className="mr-2 text-pink-600"
+                      />
+                      <span className="text-sm">전체</span>
+                    </label>
+                    {commonCodes.marketingAgree.map((code) => (
+                      <label key={code.code} className="flex items-center p-2 border border-gray-200 rounded-lg hover:bg-pink-50 cursor-pointer transition-colors">
+                        <input
+                          type="radio"
+                          name="marketing_agree_yn"
+                          value={code.code}
+                          checked={formData.criteria.marketing_agree_yn.value === code.code}
+                          onChange={(e) => handleCriteriaChange('marketing_agree_yn', 'value', e.target.value)}
+                          disabled={isFieldDisabled()}
+                          className="mr-2 text-pink-600"
+                        />
+                        <span className="text-sm">{code.code === 'Y' ? '✅' : '❌'} {code.name}</span>
+                      </label>
                     ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* 이메일 도메인 조건 */}
-              <div className="relative p-6 border-2 border-gray-200 rounded-2xl transition-all duration-300 hover:border-teal-300 bg-white/70 backdrop-blur-sm hover:shadow-md">
-                <div className="flex items-center space-x-3 mb-4">
-                  <div className="w-8 h-8 bg-teal-100 rounded-lg flex items-center justify-center">
-                    <span className="text-teal-600 text-sm font-bold">📧</span>
                   </div>
-                  <span className="font-bold text-gray-900">이메일 도메인</span>
                 </div>
-                
-                <div>
-                  <select
-                    value={formData.criteria.email_domain.value}
-                    onChange={(e) => handleCriteriaChange('email_domain', 'value', e.target.value)}
-                    disabled={isFieldDisabled()}
-                    className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
-                  >
-                    <option value="">전체 도메인</option>
-                    {commonCodes.emailDomain.map((code) => (
-                      <option key={code.code} value={code.code}>
-                        {code.code === 'GMAIL' ? '📬' : 
-                         code.code === 'NAVER' ? '🟢' : 
-                         code.code === 'DAUM' ? '🟡' : 
-                         code.code === 'KAKAO' ? '💬' : 
-                         code.code === 'COMPANY' ? '🏢' : '📮'} {code.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
 
-              {/* SMS 수신 동의 조건 */}
-              <div className="relative p-6 border-2 border-gray-200 rounded-2xl transition-all duration-300 hover:border-amber-300 bg-white/70 backdrop-blur-sm hover:shadow-md">
-                <div className="flex items-center space-x-3 mb-4">
-                  <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center">
-                    <span className="text-amber-600 text-sm font-bold">📱</span>
+                {/* SMS 수신 동의 조건 - 가로 배치 */}
+                <div className="relative p-6 border-2 border-gray-200 rounded-2xl transition-all duration-300 hover:border-amber-300 bg-white/70 backdrop-blur-sm hover:shadow-md">
+                  <div className="flex items-center space-x-3 mb-4">
+                    <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center">
+                      <span className="text-amber-600 text-sm font-bold">📱</span>
+                    </div>
+                    <span className="font-bold text-gray-900">SMS 수신</span>
                   </div>
-                  <span className="font-bold text-gray-900">SMS 수신 동의</span>
-                </div>
-                
-                <div className="space-y-3">
-                  <label className="flex items-center p-3 border border-gray-200 rounded-lg hover:bg-amber-50 cursor-pointer transition-colors">
-                    <input
-                      type="radio"
-                      name="sms_agree_yn"
-                      value=""
-                      checked={formData.criteria.sms_agree_yn.value === ''}
-                      onChange={(e) => handleCriteriaChange('sms_agree_yn', 'value', e.target.value)}
-                      disabled={isFieldDisabled()}
-                      className="mr-3 text-amber-600"
-                    />
-                    <span className="text-sm">전체</span>
-                  </label>
-                  {commonCodes.smsAgree.map((code) => (
-                    <label key={code.code} className="flex items-center p-3 border border-gray-200 rounded-lg hover:bg-amber-50 cursor-pointer transition-colors">
+                  
+                  <div className="grid grid-cols-3 gap-2">
+                    <label className="flex items-center p-2 border border-gray-200 rounded-lg hover:bg-amber-50 cursor-pointer transition-colors">
                       <input
                         type="radio"
                         name="sms_agree_yn"
-                        value={code.code}
-                        checked={formData.criteria.sms_agree_yn.value === code.code}
+                        value=""
+                        checked={formData.criteria.sms_agree_yn.value === ''}
                         onChange={(e) => handleCriteriaChange('sms_agree_yn', 'value', e.target.value)}
                         disabled={isFieldDisabled()}
-                        className="mr-3 text-amber-600"
+                        className="mr-2 text-amber-600"
                       />
-                      <span className="text-sm">{code.code === 'Y' ? '✅' : '❌'} {code.name}</span>
+                      <span className="text-sm">전체</span>
                     </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* EMAIL 수신 동의 조건 */}
-              <div className="relative p-6 border-2 border-gray-200 rounded-2xl transition-all duration-300 hover:border-emerald-300 bg-white/70 backdrop-blur-sm hover:shadow-md">
-                <div className="flex items-center space-x-3 mb-4">
-                  <div className="w-8 h-8 bg-emerald-100 rounded-lg flex items-center justify-center">
-                    <span className="text-emerald-600 text-sm font-bold">✉️</span>
+                    {commonCodes.smsAgree.map((code) => (
+                      <label key={code.code} className="flex items-center p-2 border border-gray-200 rounded-lg hover:bg-amber-50 cursor-pointer transition-colors">
+                        <input
+                          type="radio"
+                          name="sms_agree_yn"
+                          value={code.code}
+                          checked={formData.criteria.sms_agree_yn.value === code.code}
+                          onChange={(e) => handleCriteriaChange('sms_agree_yn', 'value', e.target.value)}
+                          disabled={isFieldDisabled()}
+                          className="mr-2 text-amber-600"
+                        />
+                        <span className="text-sm">{code.code === 'Y' ? '✅' : '❌'} {code.name}</span>
+                      </label>
+                    ))}
                   </div>
-                  <span className="font-bold text-gray-900">EMAIL 수신 동의</span>
                 </div>
-                
-                <div className="space-y-3">
-                  <label className="flex items-center p-3 border border-gray-200 rounded-lg hover:bg-emerald-50 cursor-pointer transition-colors">
-                    <input
-                      type="radio"
-                      name="email_agree_yn"
-                      value=""
-                      checked={formData.criteria.email_agree_yn.value === ''}
-                      onChange={(e) => handleCriteriaChange('email_agree_yn', 'value', e.target.value)}
-                      disabled={isFieldDisabled()}
-                      className="mr-3 text-emerald-600"
-                    />
-                    <span className="text-sm">전체</span>
-                  </label>
-                  {commonCodes.emailAgree.map((code) => (
-                    <label key={code.code} className="flex items-center p-3 border border-gray-200 rounded-lg hover:bg-emerald-50 cursor-pointer transition-colors">
+
+                {/* EMAIL 수신 동의 조건 - 가로 배치 */}
+                <div className="relative p-6 border-2 border-gray-200 rounded-2xl transition-all duration-300 hover:border-emerald-300 bg-white/70 backdrop-blur-sm hover:shadow-md">
+                  <div className="flex items-center space-x-3 mb-4">
+                    <div className="w-8 h-8 bg-emerald-100 rounded-lg flex items-center justify-center">
+                      <span className="text-emerald-600 text-sm font-bold">✉️</span>
+                    </div>
+                    <span className="font-bold text-gray-900">EMAIL 수신</span>
+                  </div>
+                  
+                  <div className="grid grid-cols-3 gap-2">
+                    <label className="flex items-center p-2 border border-gray-200 rounded-lg hover:bg-emerald-50 cursor-pointer transition-colors">
                       <input
                         type="radio"
                         name="email_agree_yn"
-                        value={code.code}
-                        checked={formData.criteria.email_agree_yn.value === code.code}
+                        value=""
+                        checked={formData.criteria.email_agree_yn.value === ''}
                         onChange={(e) => handleCriteriaChange('email_agree_yn', 'value', e.target.value)}
                         disabled={isFieldDisabled()}
-                        className="mr-3 text-emerald-600"
+                        className="mr-2 text-emerald-600"
                       />
-                      <span className="text-sm">{code.code === 'Y' ? '✅' : '❌'} {code.name}</span>
+                      <span className="text-sm">전체</span>
                     </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* 카카오톡 수신 동의 조건 */}
-              <div className="relative p-6 border-2 border-gray-200 rounded-2xl transition-all duration-300 hover:border-yellow-300 bg-white/70 backdrop-blur-sm hover:shadow-md">
-                <div className="flex items-center space-x-3 mb-4">
-                  <div className="w-8 h-8 bg-yellow-100 rounded-lg flex items-center justify-center">
-                    <span className="text-yellow-600 text-sm font-bold">💬</span>
+                    {commonCodes.emailAgree.map((code) => (
+                      <label key={code.code} className="flex items-center p-2 border border-gray-200 rounded-lg hover:bg-emerald-50 cursor-pointer transition-colors">
+                        <input
+                          type="radio"
+                          name="email_agree_yn"
+                          value={code.code}
+                          checked={formData.criteria.email_agree_yn.value === code.code}
+                          onChange={(e) => handleCriteriaChange('email_agree_yn', 'value', e.target.value)}
+                          disabled={isFieldDisabled()}
+                          className="mr-2 text-emerald-600"
+                        />
+                        <span className="text-sm">{code.code === 'Y' ? '✅' : '❌'} {code.name}</span>
+                      </label>
+                    ))}
                   </div>
-                  <span className="font-bold text-gray-900">카카오톡 수신 동의</span>
                 </div>
-                
-                <div className="space-y-3">
-                  <label className="flex items-center p-3 border border-gray-200 rounded-lg hover:bg-yellow-50 cursor-pointer transition-colors">
-                    <input
-                      type="radio"
-                      name="kakao_agree_yn"
-                      value=""
-                      checked={formData.criteria.kakao_agree_yn.value === ''}
-                      onChange={(e) => handleCriteriaChange('kakao_agree_yn', 'value', e.target.value)}
-                      disabled={isFieldDisabled()}
-                      className="mr-3 text-yellow-600"
-                    />
-                    <span className="text-sm">전체</span>
-                  </label>
-                  {commonCodes.kakaoAgree.map((code) => (
-                    <label key={code.code} className="flex items-center p-3 border border-gray-200 rounded-lg hover:bg-yellow-50 cursor-pointer transition-colors">
+
+                {/* 카카오톡 수신 동의 조건 - 가로 배치 */}
+                <div className="relative p-6 border-2 border-gray-200 rounded-2xl transition-all duration-300 hover:border-yellow-300 bg-white/70 backdrop-blur-sm hover:shadow-md">
+                  <div className="flex items-center space-x-3 mb-4">
+                    <div className="w-8 h-8 bg-yellow-100 rounded-lg flex items-center justify-center">
+                      <span className="text-yellow-600 text-sm font-bold">💬</span>
+                    </div>
+                    <span className="font-bold text-gray-900">카카오톡 수신</span>
+                  </div>
+                  
+                  <div className="grid grid-cols-3 gap-2">
+                    <label className="flex items-center p-2 border border-gray-200 rounded-lg hover:bg-yellow-50 cursor-pointer transition-colors">
                       <input
                         type="radio"
                         name="kakao_agree_yn"
-                        value={code.code}
-                        checked={formData.criteria.kakao_agree_yn.value === code.code}
+                        value=""
+                        checked={formData.criteria.kakao_agree_yn.value === ''}
                         onChange={(e) => handleCriteriaChange('kakao_agree_yn', 'value', e.target.value)}
                         disabled={isFieldDisabled()}
-                        className="mr-3 text-yellow-600"
+                        className="mr-2 text-yellow-600"
                       />
-                      <span className="text-sm">{code.code === 'Y' ? '✅' : '❌'} {code.name}</span>
+                      <span className="text-sm">전체</span>
                     </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* APP PUSH 수신 동의 조건 */}
-              <div className="relative p-6 border-2 border-gray-200 rounded-2xl transition-all duration-300 hover:border-violet-300 bg-white/70 backdrop-blur-sm hover:shadow-md">
-                <div className="flex items-center space-x-3 mb-4">
-                  <div className="w-8 h-8 bg-violet-100 rounded-lg flex items-center justify-center">
-                    <span className="text-violet-600 text-sm font-bold">🔔</span>
+                    {commonCodes.kakaoAgree.map((code) => (
+                      <label key={code.code} className="flex items-center p-2 border border-gray-200 rounded-lg hover:bg-yellow-50 cursor-pointer transition-colors">
+                        <input
+                          type="radio"
+                          name="kakao_agree_yn"
+                          value={code.code}
+                          checked={formData.criteria.kakao_agree_yn.value === code.code}
+                          onChange={(e) => handleCriteriaChange('kakao_agree_yn', 'value', e.target.value)}
+                          disabled={isFieldDisabled()}
+                          className="mr-2 text-yellow-600"
+                        />
+                        <span className="text-sm">{code.code === 'Y' ? '✅' : '❌'} {code.name}</span>
+                      </label>
+                    ))}
                   </div>
-                  <span className="font-bold text-gray-900">APP PUSH 수신 동의</span>
                 </div>
-                
-                <div className="space-y-3">
-                  <label className="flex items-center p-3 border border-gray-200 rounded-lg hover:bg-violet-50 cursor-pointer transition-colors">
-                    <input
-                      type="radio"
-                      name="app_push_agree_yn"
-                      value=""
-                      checked={formData.criteria.app_push_agree_yn.value === ''}
-                      onChange={(e) => handleCriteriaChange('app_push_agree_yn', 'value', e.target.value)}
-                      disabled={isFieldDisabled()}
-                      className="mr-3 text-violet-600"
-                    />
-                    <span className="text-sm">전체</span>
-                  </label>
-                  {commonCodes.appPushAgree.map((code) => (
-                    <label key={code.code} className="flex items-center p-3 border border-gray-200 rounded-lg hover:bg-violet-50 cursor-pointer transition-colors">
+
+                {/* APP PUSH 수신 동의 조건 - 가로 배치 */}
+                <div className="relative p-6 border-2 border-gray-200 rounded-2xl transition-all duration-300 hover:border-violet-300 bg-white/70 backdrop-blur-sm hover:shadow-md">
+                  <div className="flex items-center space-x-3 mb-4">
+                    <div className="w-8 h-8 bg-violet-100 rounded-lg flex items-center justify-center">
+                      <span className="text-violet-600 text-sm font-bold">🔔</span>
+                    </div>
+                    <span className="font-bold text-gray-900">APP PUSH 수신</span>
+                  </div>
+                  
+                  <div className="grid grid-cols-3 gap-2">
+                    <label className="flex items-center p-2 border border-gray-200 rounded-lg hover:bg-violet-50 cursor-pointer transition-colors">
                       <input
                         type="radio"
                         name="app_push_agree_yn"
-                        value={code.code}
-                        checked={formData.criteria.app_push_agree_yn.value === code.code}
+                        value=""
+                        checked={formData.criteria.app_push_agree_yn.value === ''}
                         onChange={(e) => handleCriteriaChange('app_push_agree_yn', 'value', e.target.value)}
                         disabled={isFieldDisabled()}
-                        className="mr-3 text-violet-600"
+                        className="mr-2 text-violet-600"
                       />
-                      <span className="text-sm">{code.code === 'Y' ? '✅' : '❌'} {code.name}</span>
+                      <span className="text-sm">전체</span>
                     </label>
-                  ))}
+                    {commonCodes.appPushAgree.map((code) => (
+                      <label key={code.code} className="flex items-center p-2 border border-gray-200 rounded-lg hover:bg-violet-50 cursor-pointer transition-colors">
+                        <input
+                          type="radio"
+                          name="app_push_agree_yn"
+                          value={code.code}
+                          checked={formData.criteria.app_push_agree_yn.value === code.code}
+                          onChange={(e) => handleCriteriaChange('app_push_agree_yn', 'value', e.target.value)}
+                          disabled={isFieldDisabled()}
+                          className="mr-2 text-violet-600"
+                        />
+                        <span className="text-sm">{code.code === 'Y' ? '✅' : '❌'} {code.name}</span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
               </div>
-
             </div>
           </div>
 
           {/* 태그 */}
-          <div className="bg-gradient-to-br from-white to-orange-50/30 rounded-2xl shadow-lg border border-orange-100/50 p-8 hover:shadow-xl transition-all duration-300">
+          {/* <div className="bg-gradient-to-br from-white to-orange-50/30 rounded-2xl shadow-lg border border-orange-100/50 p-8 hover:shadow-xl transition-all duration-300">
             <div className="flex items-center space-x-3 mb-6">
               <div className="w-8 h-8 bg-gradient-to-r from-orange-500 to-red-600 rounded-lg flex items-center justify-center">
                 <span className="text-white text-sm font-bold">🏷️</span>
@@ -987,7 +1155,7 @@ function CustomerSegmentContent() {
                 ))}
               </div>
             </div>
-          </div>
+          </div> */}
 
           {/* 액션 버튼 */}
           <div className="flex justify-between items-center pt-8 border-t border-gray-200">
@@ -996,16 +1164,37 @@ function CustomerSegmentContent() {
               onClick={() => router.push('/customers')}
               className="px-8 py-4 text-sm font-bold text-red-600 bg-gradient-to-r from-red-50 to-red-100 border-2 border-red-200 rounded-xl hover:from-red-100 hover:to-red-200 hover:border-red-300 hover:text-red-700 transition-all duration-200 transform hover:scale-105 shadow-lg hover:shadow-xl"
             >
-              ✕ 취소
+              {isViewMode ? '목록으로' : '취소'}
             </button>
             
-            {!isFieldDisabled() && (
+            {!isFieldDisabled() && mode !== 'edit' && (
+              <div className="flex space-x-4">
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="px-8 py-4 text-sm font-bold text-blue-600 bg-gradient-to-r from-blue-50 to-blue-100 border-2 border-blue-200 rounded-xl hover:from-blue-100 hover:to-blue-200 hover:border-blue-300 hover:text-blue-700 transition-all duration-200 transform hover:scale-105 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:transform-none"
+                >
+                  {isSubmitting ? '💾 저장 중...' : '💾 조건 저장'}
+                </button>
+                
+                <button
+                  type="button"
+                  onClick={handleGenerateImmediately}
+                  disabled={isSubmitting}
+                  className="px-8 py-4 text-sm font-bold text-white bg-gradient-to-r from-green-500 to-green-600 border-2 border-green-500 rounded-xl hover:from-green-600 hover:to-green-700 hover:border-green-600 transition-all duration-200 transform hover:scale-105 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:transform-none"
+                >
+                  {isSubmitting ? '🚀 생성 중...' : '🚀 즉시 생성'}
+                </button>
+              </div>
+            )}
+            
+            {!isFieldDisabled() && mode === 'edit' && (
               <button
                 type="submit"
                 disabled={isSubmitting}
                 className="px-8 py-4 text-sm font-bold text-white bg-gradient-to-r from-blue-500 to-blue-600 border-2 border-blue-500 rounded-xl hover:from-blue-600 hover:to-blue-700 hover:border-blue-600 transition-all duration-200 transform hover:scale-105 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:transform-none"
               >
-                {isSubmitting ? '💾 저장 중...' : mode === 'edit' ? '💾 수정' : '🚀 고객군 생성'}
+                {isSubmitting ? '💾 수정 중...' : '💾 수정'}
               </button>
             )}
           </div>

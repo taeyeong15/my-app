@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Layout from '@/components/Layout';
+import { useToast } from '@/components/Toast';
+import { useConfirmModal } from '@/components/ConfirmModal';
 
 interface User {
   id: number;
@@ -53,6 +55,8 @@ interface CommonCode {
 
 export default function PendingCampaignsPage() {
   const router = useRouter();
+  const { showToast, ToastContainer } = useToast();
+  const { showConfirm, ConfirmModalComponent } = useConfirmModal();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [user, setUser] = useState<User | null>(null);
@@ -184,8 +188,18 @@ export default function PendingCampaignsPage() {
     }
   };
 
-  const handleApprove = async (campaignId: number) => {
-    if (!confirm('이 캠페인을 승인하시겠습니까?')) return;
+  const handleApprove = async (campaignId: number, campaignName: string) => {
+    const confirmed = await showConfirm(
+      '캠페인 승인 확인',
+      `"${campaignName}" 캠페인을 승인하시겠습니까?\n\n✅ 승인 후에는 캠페인이 활성화되어 진행됩니다.\n\n📌 승인 처리 후:\n• 캠페인 상태가 '승인됨'으로 변경됩니다\n• 캠페인 담당자에게 알림이 전송됩니다\n• 승인 이력이 기록됩니다`,
+      {
+        confirmText: '✅ 승인하기',
+        cancelText: '취소',
+        type: 'success'
+      }
+    );
+    
+    if (!confirmed) return;
 
     try {
       setIsProcessing(true);
@@ -205,14 +219,14 @@ export default function PendingCampaignsPage() {
       const data = await response.json();
       
       if (data.success) {
-        alert('캠페인이 승인되었습니다.');
+        showToast('캠페인이 성공적으로 승인되었습니다! 🎉', 'success');
         await loadCampaigns();
       } else {
-        throw new Error(data.error || '승인 처리에 실패했습니다.');
+        showToast(data.error || '승인 처리에 실패했습니다.', 'error');
       }
     } catch (error: any) {
       console.error('승인 처리 오류:', error);
-      alert('승인 처리 중 오류가 발생했습니다: ' + error.message);
+      showToast('승인 처리 중 오류가 발생했습니다.\n네트워크를 확인하고 다시 시도해주세요.', 'error');
     } finally {
       setIsProcessing(false);
     }
@@ -226,12 +240,12 @@ export default function PendingCampaignsPage() {
 
   const handleRejectSubmit = async () => {
     if (!rejectReason.trim()) {
-      alert('반려 사유를 입력해주세요.');
+      showToast('반려 사유를 입력해주세요.', 'warning');
       return;
     }
 
     if (rejectReason.trim().length < 10) {
-      alert('반려 사유를 최소 10자 이상 입력해주세요.');
+      showToast('반려 사유를 최소 10자 이상 입력해주세요.', 'warning');
       return;
     }
 
@@ -255,17 +269,17 @@ export default function PendingCampaignsPage() {
       const data = await response.json();
       
       if (data.success) {
-        alert('캠페인이 반려되었습니다.');
+        showToast('캠페인이 성공적으로 반려되었습니다. 📝', 'success');
         setShowRejectModal(false);
         setSelectedCampaignId(null);
         setRejectReason('');
         await loadCampaigns();
       } else {
-        throw new Error(data.error || '반려 처리에 실패했습니다.');
+        showToast(data.error || '반려 처리에 실패했습니다.', 'error');
       }
     } catch (error: any) {
       console.error('반려 처리 오류:', error);
-      alert('반려 처리 중 오류가 발생했습니다: ' + error.message);
+      showToast('반려 처리 중 오류가 발생했습니다.\n네트워크를 확인하고 다시 시도해주세요.', 'error');
     } finally {
       setIsProcessing(false);
     }
@@ -312,6 +326,27 @@ export default function PendingCampaignsPage() {
     setPagination(prev => ({ ...prev, page: 1 }));
     
     // 리셋 실행 (useEffect에서 자동으로 호출됨)
+  };
+
+  // 페이지 번호 범위 계산 (최대 10개 페이지 번호만 표시)
+  const getPageRange = () => {
+    const maxVisible = 10;
+    const totalPages = pagination.totalPages;
+    const currentPage = pagination.page;
+
+    if (totalPages <= maxVisible) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+
+    const halfVisible = Math.floor(maxVisible / 2);
+    let start = Math.max(1, currentPage - halfVisible);
+    let end = Math.min(totalPages, start + maxVisible - 1);
+
+    if (end - start < maxVisible - 1) {
+      start = Math.max(1, end - maxVisible + 1);
+    }
+
+    return Array.from({ length: end - start + 1 }, (_, i) => start + i);
   };
 
   if (isLoading) {
@@ -583,13 +618,13 @@ export default function PendingCampaignsPage() {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center space-x-2">
                           <Link
-                            href={`/campaigns/new?id=${campaign.campaign_id}`}
+                            href={`/campaigns/new?id=${campaign.campaign_id}&mode=view`}
                             className="inline-flex items-center px-3 py-1 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700 transition-colors"
                           >
                             상세보기
                           </Link>
                           <button
-                            onClick={() => handleApprove(campaign.id)}
+                            onClick={() => handleApprove(campaign.id, campaign.campaign_name)}
                             disabled={isProcessing}
                             className="inline-flex items-center px-3 py-1 bg-green-600 text-white text-xs font-medium rounded hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                           >
@@ -611,44 +646,121 @@ export default function PendingCampaignsPage() {
             </div>
           )}
 
-          {/* 페이징 */}
+          {/* 깔끔한 페이징 */}
           <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
-            <div className="flex items-center justify-center space-x-2">
+            <div className="flex flex-col sm:flex-row items-center justify-center space-y-3 sm:space-y-0">
+              {/* 왼쪽: 간단한 정보 */}
+              <div className="text-sm text-gray-600">
+                <span className="font-medium">{pagination.page}</span>
+                <span className="mx-1 text-gray-400">/</span>
+                <span>{pagination.totalPages}페이지</span>
+                <span className="mx-3 text-gray-400">•</span>
+                <span>총 {pagination.totalCount.toLocaleString()}개</span>
+              </div>
+
+              {/* 가운데: 페이지 네비게이션 */}
+              {pagination.totalPages > 1 && (
+                <div className="flex items-center space-x-2 sm:mx-8">
+                  {/* 처음/이전 버튼 */}
+                  <div className="flex items-center space-x-1">
+                    <button
+                      onClick={() => handlePageChange(1)}
+                      disabled={pagination.page === 1}
+                      className={`p-2 rounded-lg transition-all duration-200 ${
+                        pagination.page === 1
+                          ? 'text-gray-300 cursor-not-allowed'
+                          : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50 hover:shadow-md'
+                      }`}
+                      title="첫 페이지"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+                      </svg>
+                    </button>
               <button
                 onClick={() => handlePageChange(pagination.page - 1)}
                 disabled={!pagination.hasPrev}
-                className={`px-3 py-1 rounded-md ${
-                  pagination.hasPrev
-                    ? 'text-gray-700 hover:bg-gray-100'
-                    : 'text-gray-400 cursor-not-allowed'
+                      className={`p-2 rounded-lg transition-all duration-200 ${
+                        !pagination.hasPrev
+                          ? 'text-gray-300 cursor-not-allowed'
+                          : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50 hover:shadow-md'
                 }`}
-              >
-                이전
+                      title="이전 페이지"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
+                      </svg>
               </button>
-              {Array.from({ length: pagination.totalPages }, (_, i) => i + 1).map((pageNum) => (
+                  </div>
+
+                  {/* 페이지 번호들 */}
+                  <div className="flex items-center space-x-1">
+                    {getPageRange().map((pageNum) => (
                 <button
                   key={pageNum}
                   onClick={() => handlePageChange(pageNum)}
-                  className={`px-3 py-1 rounded-md ${
+                        className={`min-w-[40px] h-10 px-3 rounded-lg font-medium transition-all duration-200 ${
                     pageNum === pagination.page
-                      ? 'bg-blue-600 text-white'
-                      : 'text-gray-700 hover:bg-gray-100'
+                                                    ? 'bg-blue-600 text-white shadow-md'
+                        : 'text-gray-700 hover:text-blue-600 hover:bg-blue-50'
                   }`}
                 >
                   {pageNum}
                 </button>
               ))}
+                  </div>
+
+                  {/* 다음/마지막 버튼 */}
+                  <div className="flex items-center space-x-1">
               <button
                 onClick={() => handlePageChange(pagination.page + 1)}
                 disabled={!pagination.hasNext}
-                className={`px-3 py-1 rounded-md ${
-                  pagination.hasNext
-                    ? 'text-gray-700 hover:bg-gray-100'
-                    : 'text-gray-400 cursor-not-allowed'
-                }`}
-              >
-                다음
+                      className={`p-2 rounded-lg transition-all duration-200 ${
+                        !pagination.hasNext
+                          ? 'text-gray-300 cursor-not-allowed'
+                          : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50 hover:shadow-md'
+                      }`}
+                      title="다음 페이지"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => handlePageChange(pagination.totalPages)}
+                      disabled={pagination.page === pagination.totalPages}
+                      className={`p-2 rounded-lg transition-all duration-200 ${
+                        pagination.page === pagination.totalPages
+                          ? 'text-gray-300 cursor-not-allowed'
+                          : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50 hover:shadow-md'
+                      }`}
+                      title="마지막 페이지"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                      </svg>
               </button>
+                  </div>
+                </div>
+              )}
+
+              {/* 오른쪽: 페이지 점프 (간단하게) */}
+              {pagination.totalPages > 10 && (
+                <div className="flex items-center space-x-2 sm:ml-8">
+                  <span className="text-xs text-gray-500">이동:</span>
+                  <select
+                    value={pagination.page}
+                    onChange={(e) => handlePageChange(Number(e.target.value))}
+                                          className="px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                  >
+                    {Array.from({ length: pagination.totalPages }, (_, i) => i + 1).map((pageNum) => (
+                      <option key={pageNum} value={pageNum}>
+                        {pageNum}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -698,6 +810,10 @@ export default function PendingCampaignsPage() {
           </div>
         </div>
       )}
+      
+      {/* 토스트 및 모달 컴포넌트 */}
+      <ToastContainer />
+      <ConfirmModalComponent />
     </Layout>
   );
 } 

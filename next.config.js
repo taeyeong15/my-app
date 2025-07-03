@@ -27,8 +27,8 @@ const loadEnvConfig = () => {
 loadEnvConfig();
 
 const nextConfig = {
-  // 프로덕션 최적화 설정
-  output: 'standalone',
+  // 프로덕션 최적화 설정 - 개발 모드에서는 standalone 비활성화
+  ...(process.env.NODE_ENV === 'production' && { output: 'standalone' }),
   
   // 실험적 기능
   experimental: {
@@ -61,10 +61,17 @@ const nextConfig = {
             key: 'X-XSS-Protection',
             value: '1; mode=block',
           },
-          // 캐시 최적화
+        ],
+      },
+      // 정적 자원에 대한 별도 캐시 설정
+      {
+        source: '/_next/static/(.*)',
+        headers: [
           {
             key: 'Cache-Control',
-            value: 'public, max-age=31536000, immutable',
+            value: process.env.NODE_ENV === 'development' 
+              ? 'no-cache' 
+              : 'public, max-age=31536000, immutable',
           },
         ],
       },
@@ -92,30 +99,29 @@ const nextConfig = {
     // 환경별 설정
     if (dev) {
       console.log('🔧 개발 모드로 실행 중...');
-      // 개발 모드에서 빌드 최적화
-      config.optimization = {
-        ...config.optimization,
-        splitChunks: {
-          chunks: 'all',
-          cacheGroups: {
-            vendor: {
-              test: /[\\/]node_modules[\\/]/,
-              name: 'vendors',
-              chunks: 'all',
-            },
-          },
-        },
+      
+      // 개발 모드에서 기본 설정 사용 (splitChunks 문제 방지)
+      config.cache = {
+        type: 'memory',
       };
+      
+      // HMR 안정성 개선
+      if (config.watchOptions) {
+        config.watchOptions = {
+          ...config.watchOptions,
+          ignored: /node_modules/,
+          aggregateTimeout: 300,
+          poll: false,
+        };
+      }
     } else {
       console.log('🚀 프로덕션 모드로 빌드 중...');
-      // 프로덕션 모드에서 더 적극적인 최적화
+      // 프로덕션 모드에서만 최적화 적용
       config.optimization = {
         ...config.optimization,
         minimize: true,
         splitChunks: {
           chunks: 'all',
-          minSize: 20000,
-          maxSize: 244000,
           cacheGroups: {
             default: {
               minChunks: 2,

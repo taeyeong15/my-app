@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Layout from '@/components/Layout';
+import { useToast } from '@/components/Toast';
+import { useConfirmModal } from '@/components/ConfirmModal';
 
 interface CustomerGroup {
   id: number;
@@ -41,6 +43,8 @@ interface Pagination {
 
 export default function CustomerGroupsPage() {
   const router = useRouter();
+  const { showToast, ToastContainer } = useToast();
+  const { showConfirm, ConfirmModalComponent } = useConfirmModal();
   const [groups, setGroups] = useState<CustomerGroup[]>([]);
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -71,6 +75,9 @@ export default function CustomerGroupsPage() {
     hasPrev: false
   });
 
+  // Strict Mode 중복 호출 방지를 위한 ref
+  const hasInitialized = useRef(false);
+
   useEffect(() => {
     checkAuth();
     fetchCustomerGroups();
@@ -87,7 +94,7 @@ export default function CustomerGroupsPage() {
         router.push('/login');
         return;
       }
-
+      
       const currentUser = JSON.parse(currentUserStr);
       
       // 기본 사용자 정보 유효성 검사
@@ -112,7 +119,7 @@ export default function CustomerGroupsPage() {
       router.push('/login');
     }
   };
-
+  
   // 페이징 및 적용된 검색 조건 변경 시 자동 재조회
   useEffect(() => {
     if (!isLoading) { // 초기 로딩이 아닐 때만
@@ -190,8 +197,19 @@ export default function CustomerGroupsPage() {
   const handleStatusToggle = async (groupId: number, currentStatus: string, groupName: string) => {
     const newStatus = currentStatus === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
     const action = newStatus === 'ACTIVE' ? '활성화' : '비활성화';
+    const actionIcon = newStatus === 'ACTIVE' ? '✅' : '❌';
     
-    if (!confirm(`'${groupName}' 고객군을 ${action}하시겠습니까?`)) {
+    const confirmed = await showConfirm(
+      `고객군 ${action} 확인`,
+      `"${groupName}" 고객군을 ${action}하시겠습니까?\n\n${actionIcon} ${action} 후에는 관련 캠페인에 영향을 줄 수 있습니다.`,
+      {
+        confirmText: `${actionIcon} ${action}하기`,
+        cancelText: '취소',
+        type: newStatus === 'ACTIVE' ? 'success' : 'warning'
+      }
+    );
+    
+    if (!confirmed) {
       return;
     }
 
@@ -207,7 +225,7 @@ export default function CustomerGroupsPage() {
       const data = await response.json();
 
       if (data.success) {
-        alert(`고객군이 성공적으로 ${action}되었습니다.`);
+        showToast(`고객군이 성공적으로 ${action}되었습니다! 🎉`, 'success');
         // 데이터 다시 조회
         fetchCustomerGroups();
       } else {
@@ -217,14 +235,14 @@ export default function CustomerGroupsPage() {
             .map((campaign: any) => `• ${campaign.name} (${campaign.status})`)
             .join('\n');
           
-          alert(`${data.error}\n\n진행 중인 캠페인:\n${campaignList}`);
+          showToast(`${data.error}\n\n📋 진행 중인 캠페인:\n${campaignList}`, 'error', 8000);
         } else {
-          alert(data.error || `고객군 ${action}에 실패했습니다.`);
+          showToast(data.error || `고객군 ${action}에 실패했습니다.`, 'error');
         }
       }
     } catch (error: any) {
       console.error('고객군 상태 변경 오류:', error);
-      alert(`고객군 ${action} 중 오류가 발생했습니다: ` + error.message);
+      showToast(`고객군 ${action} 중 오류가 발생했습니다.\n다시 시도해주세요.`, 'error');
     }
   };
 
@@ -255,8 +273,17 @@ export default function CustomerGroupsPage() {
   };
 
   const handleDelete = async (groupId: number, groupName: string) => {
-    console.log(groupId, groupName);
-    if (!confirm(`'${groupName}' 고객군을 정말 삭제하시겠습니까?`)) {
+    const confirmed = await showConfirm(
+      '고객군 삭제 확인',
+      `정말로 "${groupName}" 고객군을 삭제하시겠습니까?\n\n⚠️ 삭제된 고객군은 복구할 수 없습니다.\n\n🔍 캠페인 연관성을 확인한 후 삭제가 진행됩니다:\n• 관련 캠페인이 있는 경우 모든 캠페인이 완료 상태여야 삭제 가능합니다\n• 진행 중이거나 대기 중인 캠페인이 있으면 삭제가 거부됩니다`,
+      {
+        confirmText: '🗑️ 삭제하기',
+        cancelText: '취소',
+        type: 'danger'
+      }
+    );
+    
+    if (!confirmed) {
       return;
     }
 
@@ -268,20 +295,50 @@ export default function CustomerGroupsPage() {
       const data = await response.json();
 
       if (data.success) {
-        alert('고객군이 성공적으로 삭제되었습니다.');
+        showToast('고객군이 성공적으로 삭제되었습니다! 🗑️', 'success');
         // 현재 페이지에서 데이터 다시 조회
         fetchCustomerGroups();
       } else {
-        throw new Error(data.error || '고객군 삭제에 실패했습니다.');
+        // API에서 반환하는 상세 에러 메시지 표시
+        if (data.details && data.details.activeCampaigns) {
+          const campaignList = data.details.activeCampaigns
+            .map((campaign: any) => `• ${campaign.name} (${campaign.status})`)
+            .join('\n');
+          
+          showToast(`${data.error}\n\n📋 관련 캠페인:\n${campaignList}`, 'error', 8000);
+        } else {
+          showToast(data.error || '고객군 삭제에 실패했습니다.', 'error');
+        }
       }
     } catch (error: any) {
       console.error('고객군 삭제 오류:', error);
-      alert('고객군 삭제 중 오류가 발생했습니다: ' + error.message);
+      showToast('고객군 삭제 중 오류가 발생했습니다.\n네트워크를 확인하고 다시 시도해주세요.', 'error');
     }
   };
 
   // 관리자 권한 확인
   const isAdmin = user?.role === 'admin';
+
+  // 페이지 번호 범위 계산 (최대 10개 페이지 번호만 표시)
+  const getPageRange = () => {
+    const maxVisible = 10;
+    const totalPages = pagination.totalPages;
+    const currentPage = pagination.page;
+
+    if (totalPages <= maxVisible) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+
+    const halfVisible = Math.floor(maxVisible / 2);
+    let start = Math.max(1, currentPage - halfVisible);
+    let end = Math.min(totalPages, start + maxVisible - 1);
+
+    if (end - start < maxVisible - 1) {
+      start = Math.max(1, end - maxVisible + 1);
+    }
+
+    return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+  };
 
   if (isLoading) {
     return (
@@ -611,48 +668,129 @@ export default function CustomerGroupsPage() {
             </div>
           )}
 
-          {/* 페이징 */}
+          {/* 깔끔한 페이징 */}
           <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
-            <div className="flex items-center justify-center space-x-2">
-              <button
-                onClick={() => handlePageChange(pagination.page - 1)}
-                disabled={!pagination.hasPrev}
-                className={`px-3 py-1 rounded-md ${
-                  pagination.hasPrev
-                    ? 'text-gray-700 hover:bg-gray-100'
-                    : 'text-gray-400 cursor-not-allowed'
-                }`}
-              >
-                이전
-              </button>
-              {Array.from({ length: pagination.totalPages }, (_, i) => i + 1).map((pageNum) => (
-                <button
-                  key={pageNum}
-                  onClick={() => handlePageChange(pageNum)}
-                  className={`px-3 py-1 rounded-md ${
-                    pageNum === pagination.page
-                      ? 'bg-blue-600 text-white'
-                      : 'text-gray-700 hover:bg-gray-100'
-                  }`}
-                >
-                  {pageNum}
-                </button>
-              ))}
-              <button
-                onClick={() => handlePageChange(pagination.page + 1)}
-                disabled={!pagination.hasNext}
-                className={`px-3 py-1 rounded-md ${
-                  pagination.hasNext
-                    ? 'text-gray-700 hover:bg-gray-100'
-                    : 'text-gray-400 cursor-not-allowed'
-                }`}
-              >
-                다음
-              </button>
+            <div className="flex flex-col sm:flex-row items-center justify-center space-y-3 sm:space-y-0">
+              {/* 왼쪽: 간단한 정보 */}
+              <div className="text-sm text-gray-600">
+                <span className="font-medium">{pagination.page}</span>
+                <span className="mx-1 text-gray-400">/</span>
+                <span>{pagination.totalPages}페이지</span>
+                <span className="mx-3 text-gray-400">•</span>
+                <span>총 {pagination.total.toLocaleString()}개</span>
+              </div>
+
+              {/* 가운데: 페이지 네비게이션 */}
+              {pagination.totalPages > 1 && (
+                <div className="flex items-center space-x-2 sm:mx-8">
+                  {/* 처음/이전 버튼 */}
+                  <div className="flex items-center space-x-1">
+                    <button
+                      onClick={() => handlePageChange(1)}
+                      disabled={pagination.page === 1}
+                      className={`p-2 rounded-lg transition-all duration-200 ${
+                        pagination.page === 1
+                          ? 'text-gray-300 cursor-not-allowed'
+                          : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50 hover:shadow-md'
+                      }`}
+                      title="첫 페이지"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => handlePageChange(pagination.page - 1)}
+                      disabled={!pagination.hasPrev}
+                      className={`p-2 rounded-lg transition-all duration-200 ${
+                        !pagination.hasPrev
+                          ? 'text-gray-300 cursor-not-allowed'
+                          : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50 hover:shadow-md'
+                      }`}
+                      title="이전 페이지"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
+                      </svg>
+                    </button>
+                  </div>
+
+                  {/* 페이지 번호들 */}
+                  <div className="flex items-center space-x-1">
+                    {getPageRange().map((pageNum) => (
+                      <button
+                        key={pageNum}
+                        onClick={() => handlePageChange(pageNum)}
+                        className={`min-w-[40px] h-10 px-3 rounded-lg font-medium transition-all duration-200 ${
+                          pageNum === pagination.page
+                            ? 'bg-blue-600 text-white shadow-md'
+                            : 'text-gray-700 hover:text-blue-600 hover:bg-blue-50'
+                        }`}
+                      >
+                        {pageNum}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* 다음/마지막 버튼 */}
+                  <div className="flex items-center space-x-1">
+                    <button
+                      onClick={() => handlePageChange(pagination.page + 1)}
+                      disabled={!pagination.hasNext}
+                      className={`p-2 rounded-lg transition-all duration-200 ${
+                        !pagination.hasNext
+                          ? 'text-gray-300 cursor-not-allowed'
+                          : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50 hover:shadow-md'
+                      }`}
+                      title="다음 페이지"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => handlePageChange(pagination.totalPages)}
+                      disabled={pagination.page === pagination.totalPages}
+                      className={`p-2 rounded-lg transition-all duration-200 ${
+                        pagination.page === pagination.totalPages
+                          ? 'text-gray-300 cursor-not-allowed'
+                          : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50 hover:shadow-md'
+                      }`}
+                      title="마지막 페이지"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* 오른쪽: 페이지 점프 (간단하게) */}
+              {pagination.totalPages > 10 && (
+                <div className="flex items-center space-x-2 sm:ml-8">
+                  <span className="text-xs text-gray-500">이동:</span>
+                  <select
+                    value={pagination.page}
+                    onChange={(e) => handlePageChange(Number(e.target.value))}
+                    className="px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                  >
+                    {Array.from({ length: pagination.totalPages }, (_, i) => i + 1).map((pageNum) => (
+                      <option key={pageNum} value={pageNum}>
+                        {pageNum}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
           </div>
         </div>
       </div>
+      
+      {/* 토스트 및 모달 컴포넌트 */}
+      <ToastContainer />
+      <ConfirmModalComponent />
     </Layout>
   );
 } 

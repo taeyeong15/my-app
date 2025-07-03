@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 
 export interface ToastProps {
   message: string;
@@ -86,14 +86,14 @@ export function useToast() {
     duration?: number;
   }>>([]);
 
-  const showToast = (message: string, type: 'success' | 'error' | 'warning' | 'info' = 'info', duration?: number) => {
+  const showToast = useCallback((message: string, type: 'success' | 'error' | 'warning' | 'info' = 'info', duration?: number) => {
     const id = Date.now().toString();
     setToasts(prev => [...prev, { id, message, type, duration }]);
-  };
+  }, []);
 
-  const removeToast = (id: string) => {
+  const removeToast = useCallback((id: string) => {
     setToasts(prev => prev.filter(toast => toast.id !== id));
-  };
+  }, []);
 
   const ToastContainer = () => (
     <>

@@ -4,12 +4,12 @@
 -- 생성일: 2025-01-17
 -- 설명: 전체 테이블 스키마 및 인덱스 정의
 
--- 데이터베이스 생성
-CREATE DATABASE IF NOT EXISTS campaign_db 
+-- 데이터베이스 생성 (실제 사용하는 데이터베이스명)
+CREATE DATABASE IF NOT EXISTS auth_db 
 CHARACTER SET utf8mb4 
 COLLATE utf8mb4_unicode_ci;
 
-USE campaign_db;
+USE auth_db;
 
 -- ====================================================
 -- 1. 사용자 관리 테이블
@@ -106,47 +106,64 @@ CREATE TABLE IF NOT EXISTS channels (
 -- 4. 고객군 관리 테이블
 -- ====================================================
 
--- 고객군 테이블
+-- 고객군 테이블 (실제 DB 구조 기준)
 CREATE TABLE IF NOT EXISTS customer_groups (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
+    group_name VARCHAR(100) NOT NULL,
     description TEXT,
     conditions JSON,
+    customer_count INT DEFAULT 0,
     estimated_count INT DEFAULT 0,
     actual_count INT DEFAULT 0,
-    last_calculated TIMESTAMP NULL,
-    is_active BOOLEAN DEFAULT TRUE,
-    created_by VARCHAR(255),
+    del_yn VARCHAR(1) DEFAULT 'N',
+    use_yn VARCHAR(10) DEFAULT 'N',
+    status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+    created_date DATE,
+    created_dept VARCHAR(50),
+    created_emp_no VARCHAR(50),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_date DATE,
+    updated_dept VARCHAR(50),
+    updated_emp_no VARCHAR(50),
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    generation_status ENUM('DRAFT', 'GENERATING', 'COMPLETED', 'FAILED') DEFAULT 'DRAFT',
+    generation_error TEXT,
+    generation_requested_at TIMESTAMP,
+    generation_completed_at TIMESTAMP,
     
     -- 인덱스
-    INDEX idx_name (name),
-    INDEX idx_active (is_active),
-    INDEX idx_created_by (created_by),
-    INDEX idx_created_at (created_at)
+    INDEX idx_group_name (group_name),
+    INDEX idx_status (status),
+    INDEX idx_use_yn (use_yn),
+    INDEX idx_del_yn (del_yn),
+    INDEX idx_created_date (created_date),
+    INDEX idx_created_dept (created_dept),
+    INDEX idx_created_emp_no (created_emp_no),
+    INDEX idx_generation_status (generation_status),
+    INDEX idx_generation_requested_at (generation_requested_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ====================================================
 -- 5. 오퍼 관리 테이블
 -- ====================================================
 
--- 오퍼 테이블
+-- 오퍼 테이블 (실제 DB 구조 기준)
 CREATE TABLE IF NOT EXISTS offers (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
-    type ENUM('discount', 'coupon', 'gift', 'point', 'cashback') NOT NULL,
-    description TEXT,
+    name VARCHAR(255) NOT NULL,
+    type VARCHAR(100),
     value DECIMAL(10,2) NOT NULL,
-    value_type ENUM('percentage', 'fixed', 'point') NOT NULL,
-    start_date DATE,
-    end_date DATE,
-    max_usage INT,
+    value_type ENUM('percentage', 'fixed') NOT NULL,
+    description TEXT,
+    start_date DATE NOT NULL,
+    end_date DATE NOT NULL,
+    max_usage INT DEFAULT 0,
     usage_count INT DEFAULT 0,
-    status ENUM('active', 'inactive', 'expired') DEFAULT 'active',
     terms_conditions TEXT,
-    created_by VARCHAR(255),
+    status ENUM('active', 'inactive', 'scheduled') DEFAULT 'active',
+    created_by VARCHAR(255) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_by VARCHAR(255),
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     
     -- 인덱스
@@ -155,70 +172,203 @@ CREATE TABLE IF NOT EXISTS offers (
     INDEX idx_start_date (start_date),
     INDEX idx_end_date (end_date),
     INDEX idx_created_by (created_by)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 오퍼 조건 테이블 (실제 DB 구조 기준)
+CREATE TABLE IF NOT EXISTS offer_conditions (
+    offer_id INT PRIMARY KEY,
+    point_accumulation TINYINT(1) DEFAULT 0,
+    duplicate_usage TINYINT(1) DEFAULT 0,
+    multiple_discount TINYINT(1) DEFAULT 0,
+    usage_start_time TIME,
+    usage_end_time TIME,
+    min_quantity INT DEFAULT 0,
+    max_quantity INT DEFAULT 0,
+    min_amount DECIMAL(15,2) DEFAULT 0.00,
+    max_amount DECIMAL(15,2) DEFAULT 0.00,
+    monday_available TINYINT(1) DEFAULT 1,
+    tuesday_available TINYINT(1) DEFAULT 1,
+    wednesday_available TINYINT(1) DEFAULT 1,
+    thursday_available TINYINT(1) DEFAULT 1,
+    friday_available TINYINT(1) DEFAULT 1,
+    saturday_available TINYINT(1) DEFAULT 1,
+    sunday_available TINYINT(1) DEFAULT 1,
+    created_by VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_by VARCHAR(255),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    
+    -- 외래키
+    FOREIGN KEY (offer_id) REFERENCES offers(id) ON DELETE CASCADE,
+    
+    -- 인덱스
+    INDEX idx_point_accumulation (point_accumulation),
+    INDEX idx_duplicate_usage (duplicate_usage),
+    INDEX idx_multiple_discount (multiple_discount),
+    INDEX idx_usage_start_time (usage_start_time),
+    INDEX idx_min_quantity (min_quantity),
+    INDEX idx_min_amount (min_amount),
+    INDEX idx_created_by (created_by),
+    INDEX idx_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 상품 테이블
+CREATE TABLE IF NOT EXISTS products (
+    product_code VARCHAR(100) PRIMARY KEY,
+    product_name VARCHAR(255) NOT NULL,
+    created_by VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_by VARCHAR(255),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    
+    -- 인덱스
+    INDEX idx_product_name (product_name),
+    INDEX idx_created_by (created_by),
+    INDEX idx_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 오퍼 적용 상품 테이블 (실제 DB 구조 기준)
+CREATE TABLE IF NOT EXISTS offer_products (
+    offer_id INT NOT NULL,
+    target_code VARCHAR(100) NOT NULL,
+    created_by VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_by VARCHAR(255),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    
+    -- 복합 기본키
+    PRIMARY KEY (offer_id, target_code),
+    
+    -- 외래키
+    FOREIGN KEY (offer_id) REFERENCES offers(id) ON DELETE CASCADE,
+    FOREIGN KEY (target_code) REFERENCES products(product_code) ON DELETE CASCADE,
+    
+    -- 인덱스
+    INDEX idx_target_code (target_code),
+    INDEX idx_created_by (created_by),
+    INDEX idx_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 캠페인-오퍼 연결 테이블 (API에서 실제 사용하는 테이블)
+CREATE TABLE IF NOT EXISTS campaign_offers (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    campaign_id INT NOT NULL,
+    offer_id INT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    
+    -- 외래키
+    FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,
+    FOREIGN KEY (offer_id) REFERENCES offers(id) ON DELETE CASCADE,
+    
+    -- 유니크 제약
+    UNIQUE KEY uk_campaign_offer (campaign_id, offer_id),
+    
+    -- 인덱스
+    INDEX idx_campaign_id (campaign_id),
+    INDEX idx_offer_id (offer_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 캠페인-고객군 연결 테이블 (API에서 실제 사용하는 테이블)
+CREATE TABLE IF NOT EXISTS campaign_customer_groups (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    campaign_id INT NOT NULL,
+    customer_group_id INT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    
+    -- 외래키
+    FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,
+    FOREIGN KEY (customer_group_id) REFERENCES customer_groups(id) ON DELETE CASCADE,
+    
+    -- 유니크 제약
+    UNIQUE KEY uk_campaign_customer_group (campaign_id, customer_group_id),
+    
+    -- 인덱스
+    INDEX idx_campaign_id (campaign_id),
+    INDEX idx_customer_group_id (customer_group_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 캠페인-스크립트 연결 테이블 (API에서 실제 사용하는 테이블)
+CREATE TABLE IF NOT EXISTS campaign_scripts (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    campaign_id INT NOT NULL,
+    script_id INT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    
+    -- 외래키
+    FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,
+    FOREIGN KEY (script_id) REFERENCES scripts(id) ON DELETE CASCADE,
+    
+    -- 유니크 제약
+    UNIQUE KEY uk_campaign_script (campaign_id, script_id),
+    
+    -- 인덱스
+    INDEX idx_campaign_id (campaign_id),
+    INDEX idx_script_id (script_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ====================================================
 -- 6. 스크립트 관리 테이블
 -- ====================================================
 
--- 스크립트 테이블
+-- 스크립트 테이블 (실제 DB 구조 기준)
 CREATE TABLE IF NOT EXISTS scripts (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
-    type ENUM('email', 'sms', 'push', 'kakao', 'web', 'mobile', 'app') NOT NULL,
+    name VARCHAR(255) NOT NULL,
     description TEXT,
-    subject VARCHAR(255),
+    type VARCHAR(100) NOT NULL,
+    status VARCHAR(100) DEFAULT 'draft',
+    approval_status VARCHAR(100) DEFAULT 'pending',
     content TEXT NOT NULL,
     variables JSON,
-    is_active BOOLEAN DEFAULT TRUE,
-    created_by VARCHAR(255),
+    subject VARCHAR(255),
+    created_by VARCHAR(255) NOT NULL,
+    approved_by VARCHAR(255),
+    approved_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     
     -- 인덱스
     INDEX idx_type (type),
-    INDEX idx_active (is_active),
+    INDEX idx_status (status),
+    INDEX idx_approval_status (approval_status),
     INDEX idx_name (name),
-    INDEX idx_created_by (created_by)
+    INDEX idx_created_by (created_by),
+    INDEX idx_approved_by (approved_by)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ====================================================
 -- 7. 캠페인 관리 테이블
 -- ====================================================
 
--- 캠페인 테이블
+-- 캠페인 테이블 (실제 DB 구조 기준)
 CREATE TABLE IF NOT EXISTS campaigns (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
-    type VARCHAR(50),
-    description TEXT,
+    name VARCHAR(255) NOT NULL,
+    type VARCHAR(50) NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'PLANNING',
     start_date DATE,
     end_date DATE,
-    budget DECIMAL(15,2),
-    target_customer_groups INT,
+    budget DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+    spent DECIMAL(15,2) DEFAULT 0.00,
+    impressions INT DEFAULT 0,
+    clicks INT DEFAULT 0,
+    conversions INT DEFAULT 0,
+    description VARCHAR(500),
+    target_audience VARCHAR(100),
     channels VARCHAR(100),
-    offers INT,
-    scripts INT,
-    target_audience TEXT,
-    status ENUM('PLANNING', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED', 'RUNNING', 'PAUSED', 'COMPLETED', 'CANCELLED') DEFAULT 'PLANNING',
-    is_draft BOOLEAN DEFAULT FALSE,
-    created_by VARCHAR(255),
-    updated_by VARCHAR(255),
+    created_by VARCHAR(255) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    
-    -- 외래키
-    FOREIGN KEY (target_customer_groups) REFERENCES customer_groups(id) ON DELETE SET NULL,
-    FOREIGN KEY (offers) REFERENCES offers(id) ON DELETE SET NULL,
-    FOREIGN KEY (scripts) REFERENCES scripts(id) ON DELETE SET NULL,
     
     -- 인덱스
     INDEX idx_status (status),
     INDEX idx_start_date (start_date),
     INDEX idx_end_date (end_date),
     INDEX idx_created_by (created_by),
-    INDEX idx_type (type),
-    INDEX idx_draft (is_draft)
+    INDEX idx_type (type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 캠페인 승인 요청 테이블

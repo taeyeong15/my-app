@@ -285,6 +285,27 @@ export default function NoticesPage() {
     }
   };
 
+  // 페이지 번호 범위 계산 (최대 10개 페이지 번호만 표시)
+  const getPageRange = () => {
+    const maxVisible = 10;
+    const totalPages = pagination.totalPages;
+    const currentPage = pagination.page;
+
+    if (totalPages <= maxVisible) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+
+    const halfVisible = Math.floor(maxVisible / 2);
+    let start = Math.max(1, currentPage - halfVisible);
+    let end = Math.min(totalPages, start + maxVisible - 1);
+
+    if (end - start < maxVisible - 1) {
+      start = Math.max(1, end - maxVisible + 1);
+    }
+
+    return Array.from({ length: end - start + 1 }, (_, i) => start + i);
+  };
+
   if (!user && isLoading) {
     return (
       <Layout title="공지사항 관리" subtitle="시스템 공지사항을 관리합니다.">
@@ -328,21 +349,6 @@ export default function NoticesPage() {
       subtitle="시스템 공지사항을 관리합니다."
     >
       <div className="p-6 space-y-6">
-        {/* 헤더 */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">공지사항 관리</h1>
-            <p className="mt-1 text-sm text-gray-600">
-              환영합니다, {user?.name}님! 시스템 공지사항을 관리하세요.
-            </p>
-          </div>
-          <button
-            onClick={handleLogout}
-            className="inline-flex items-center px-4 py-2 bg-red-600 text-white text-sm font-medium rounded-lg hover:bg-red-700 transition-colors"
-          >
-            로그아웃
-          </button>
-        </div>
 
         {/* 통계 대시보드 */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -564,44 +570,121 @@ export default function NoticesPage() {
                 </table>
               </div>
 
-              {/* 페이징 */}
+              {/* 깔끔한 페이징 */}
               <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
-                <div className="flex items-center justify-center space-x-2">
-                  <button
-                    onClick={() => handlePageChange(pagination.page - 1)}
-                    disabled={!pagination.hasPrev}
-                    className={`px-3 py-1 rounded-md ${
-                      pagination.hasPrev
-                        ? 'text-gray-700 hover:bg-gray-100'
-                        : 'text-gray-400 cursor-not-allowed'
-                    }`}
-                  >
-                    이전
-                  </button>
-                  {Array.from({ length: pagination.totalPages }, (_, i) => i + 1).map((pageNum) => (
-                    <button
-                      key={pageNum}
-                      onClick={() => handlePageChange(pageNum)}
-                      className={`px-3 py-1 rounded-md ${
-                        pageNum === pagination.page
-                          ? 'bg-blue-600 text-white'
-                          : 'text-gray-700 hover:bg-gray-100'
-                      }`}
-                    >
-                      {pageNum}
-                    </button>
-                  ))}
-                  <button
-                    onClick={() => handlePageChange(pagination.page + 1)}
-                    disabled={!pagination.hasNext}
-                    className={`px-3 py-1 rounded-md ${
-                      pagination.hasNext
-                        ? 'text-gray-700 hover:bg-gray-100'
-                        : 'text-gray-400 cursor-not-allowed'
-                    }`}
-                  >
-                    다음
-                  </button>
+                <div className="flex flex-col sm:flex-row items-center justify-center space-y-3 sm:space-y-0">
+                  {/* 왼쪽: 간단한 정보 */}
+                  <div className="text-sm text-gray-600">
+                    <span className="font-medium">{pagination.page}</span>
+                    <span className="mx-1 text-gray-400">/</span>
+                    <span>{pagination.totalPages}페이지</span>
+                    <span className="mx-3 text-gray-400">•</span>
+                    <span>총 {pagination.totalCount.toLocaleString()}개</span>
+                  </div>
+
+                  {/* 가운데: 페이지 네비게이션 */}
+                  {pagination.totalPages > 1 && (
+                    <div className="flex items-center space-x-2 sm:mx-8">
+                      {/* 처음/이전 버튼 */}
+                      <div className="flex items-center space-x-1">
+                        <button
+                          onClick={() => handlePageChange(1)}
+                          disabled={pagination.page === 1}
+                          className={`p-2 rounded-lg transition-all duration-200 ${
+                            pagination.page === 1
+                              ? 'text-gray-300 cursor-not-allowed'
+                              : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50 hover:shadow-md'
+                          }`}
+                          title="첫 페이지"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={() => handlePageChange(pagination.page - 1)}
+                          disabled={!pagination.hasPrev}
+                          className={`p-2 rounded-lg transition-all duration-200 ${
+                            !pagination.hasPrev
+                              ? 'text-gray-300 cursor-not-allowed'
+                              : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50 hover:shadow-md'
+                          }`}
+                          title="이전 페이지"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
+                          </svg>
+                        </button>
+                      </div>
+
+                      {/* 페이지 번호들 */}
+                      <div className="flex items-center space-x-1">
+                        {getPageRange().map((pageNum) => (
+                          <button
+                            key={pageNum}
+                            onClick={() => handlePageChange(pageNum)}
+                            className={`min-w-[40px] h-10 px-3 rounded-lg font-medium transition-all duration-200 ${
+                              pageNum === pagination.page
+                                ? 'bg-blue-600 text-white shadow-md'
+                                : 'text-gray-700 hover:text-blue-600 hover:bg-blue-50'
+                            }`}
+                          >
+                            {pageNum}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* 다음/마지막 버튼 */}
+                      <div className="flex items-center space-x-1">
+                        <button
+                          onClick={() => handlePageChange(pagination.page + 1)}
+                          disabled={!pagination.hasNext}
+                          className={`p-2 rounded-lg transition-all duration-200 ${
+                            !pagination.hasNext
+                              ? 'text-gray-300 cursor-not-allowed'
+                              : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50 hover:shadow-md'
+                          }`}
+                          title="다음 페이지"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={() => handlePageChange(pagination.totalPages)}
+                          disabled={pagination.page === pagination.totalPages}
+                          className={`p-2 rounded-lg transition-all duration-200 ${
+                            pagination.page === pagination.totalPages
+                              ? 'text-gray-300 cursor-not-allowed'
+                              : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50 hover:shadow-md'
+                          }`}
+                          title="마지막 페이지"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 오른쪽: 페이지 점프 (간단하게) */}
+                  {pagination.totalPages > 10 && (
+                    <div className="flex items-center space-x-2 sm:ml-8">
+                      <span className="text-xs text-gray-500">이동:</span>
+                      <select
+                        value={pagination.page}
+                        onChange={(e) => handlePageChange(Number(e.target.value))}
+                        className="px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                      >
+                        {Array.from({ length: pagination.totalPages }, (_, i) => i + 1).map((pageNum) => (
+                          <option key={pageNum} value={pageNum}>
+                            {pageNum}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
               </div>
             </>

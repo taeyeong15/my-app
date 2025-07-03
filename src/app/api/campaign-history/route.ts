@@ -69,13 +69,13 @@ export async function GET(request: NextRequest) {
 
     // 통계 계산
     const allStats = statsRows as any[];
-    const totalHistory = allStats.reduce((sum, row) => sum + row.count, 0);
-    const approvedCount = allStats.filter(row => row.action_type === 'approved').reduce((sum, row) => sum + row.count, 0);
-    const updatedCount = allStats.filter(row => row.action_type === 'updated').reduce((sum, row) => sum + row.count, 0);
+    const totalHistory = allStats.reduce((sum, row) => sum + (Number(row.count) || 0), 0);
+    const approvedCount = allStats.filter(row => row.action_type === 'approved').reduce((sum, row) => sum + (Number(row.count) || 0), 0);
+    const updatedCount = allStats.filter(row => row.action_type === 'updated').reduce((sum, row) => sum + (Number(row.count) || 0), 0);
     
     // 오늘 활동 계산
     const today = new Date().toISOString().split('T')[0];
-    const todayActivity = allStats.filter(row => row.action_date === today).reduce((sum, row) => sum + row.count, 0);
+    const todayActivity = allStats.filter(row => row.action_date === today).reduce((sum, row) => sum + (Number(row.count) || 0), 0);
 
     // 페이징된 데이터 조회
     const mainQuery = `

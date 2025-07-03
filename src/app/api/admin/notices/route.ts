@@ -17,9 +17,9 @@ export async function GET(request: NextRequest) {
     let whereParams: any[] = [];
 
     if (search) {
-      whereClause += ' AND (title LIKE ? OR content LIKE ? OR author LIKE ?)';
+      whereClause += ' AND (title LIKE ? OR content LIKE ?)';
       const searchPattern = `%${search}%`;
-      whereParams.push(searchPattern, searchPattern, searchPattern);
+      whereParams.push(searchPattern, searchPattern);
     }
 
     if (type !== 'all') {
@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
         created_at as publish_date,
         updated_at as expiry_date,
         0 as views,
-        COALESCE(author, 'Admin') as author,
+        'Admin' as author,
         created_at,
         updated_at
       FROM notices
@@ -103,12 +103,12 @@ export async function GET(request: NextRequest) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { title, content, type, status, author } = body;
+    const { title, content, type, status } = body;
 
     const [result] = await pool.execute(`
-      INSERT INTO notices (title, content, type, status, author, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, NOW(), NOW())
-    `, [title, content, type, status, author || 'Admin']);
+      INSERT INTO notices (title, content, type, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, NOW(), NOW())
+    `, [title, content, type, status]);
 
     return NextResponse.json({
       success: true,

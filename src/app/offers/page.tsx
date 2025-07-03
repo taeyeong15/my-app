@@ -4,6 +4,13 @@ import Layout from '@/components/Layout';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useToast } from '@/components/Toast';
+import { useConfirmModal } from '@/components/ConfirmModal';
+
+interface CommonCode {
+  code: string;
+  name: string;
+}
 
 interface Offer {
   id: number;
@@ -32,14 +39,33 @@ interface Pagination {
   hasPrev: boolean;
 }
 
+interface Statistics {
+  totalOffers: number;
+  activeOffers: number;
+  scheduledOffers: number;
+  totalUsage: number;
+}
+
 export default function OffersPage() {
   const router = useRouter();
+  const { showToast, ToastContainer } = useToast();
+  const { showConfirm, ConfirmModalComponent } = useConfirmModal();
   const [offers, setOffers] = useState<Offer[]>([]);
   const [filterType, setFilterType] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [typeOptions, setTypeOptions] = useState<CommonCode[]>([]);
+  const [statusOptions, setStatusOptions] = useState<CommonCode[]>([]);
+  const [statistics, setStatistics] = useState<Statistics>({
+    totalOffers: 0,
+    activeOffers: 0,
+    scheduledOffers: 0,
+    totalUsage: 0
+  });
   const [pagination, setPagination] = useState<Pagination>({
     page: 1,
     limit: 5,
@@ -54,17 +80,61 @@ export default function OffersPage() {
   const [appliedFilterType, setAppliedFilterType] = useState('all');
   const [appliedFilterStatus, setAppliedFilterStatus] = useState('all');
 
+  // 사용자 권한 확인 함수
+  const checkUserPermission = () => {
+    try {
+      const loggedInUser = sessionStorage.getItem('currentUser');
+      if (!loggedInUser) {
+        return false;
+      }
+
+      const userData = JSON.parse(loggedInUser);
+      setCurrentUser(userData);
+      
+      // sessionStorage에서 직접 role 확인
+      const userRole = userData.role;
+      setIsAdmin(userRole === 'admin');
+      return true;
+    } catch (error) {
+      console.error('사용자 권한 확인 실패:', error);
+      return false;
+    }
+  };
+
+  // 옵션 데이터 로드 함수
+  const loadOptionsData = async () => {
+    try {
+      const [typeResponse, statusResponse] = await Promise.all([
+        fetch('/api/common-codes?category=OFFER&sub_category=TYPE'),
+        fetch('/api/common-codes?category=OFFER&sub_category=STATUS')
+      ]);
+
+      if (typeResponse.ok) {
+        const typeData = await typeResponse.json();
+        setTypeOptions(typeData.data || []);
+      }
+
+      if (statusResponse.ok) {
+        const statusData = await statusResponse.json();
+        setStatusOptions(statusData.data || []);
+      }
+    } catch (error) {
+      console.error('옵션 데이터 로드 실패:', error);
+    }
+  };
+
   useEffect(() => {
     const checkAuth = () => {
       try {
-        const loggedInUser = sessionStorage.getItem('currentUser');
+        const hasPermission = checkUserPermission();
         
-        if (!loggedInUser) {
+        if (!hasPermission) {
           router.push('/login');
           return;
         }
         
         // 인증 확인 후 데이터 로드
+        loadOptionsData();
         fetchOffers();
       } catch (error) {
         console.error('인증 확인 실패:', error);
@@ -75,12 +145,12 @@ export default function OffersPage() {
     checkAuth();
   }, [router]);
 
-  // 페이징만 자동 재조회 (검색 조건은 검색 버튼으로만)
+  // 페이징 및 적용된 검색 조건 변경 시 자동 재조회
   useEffect(() => {
     if (!isLoading) { // 초기 로딩이 아닐 때만
       fetchOffers();
     }
-  }, [pagination.page, pagination.limit]);
+  }, [pagination.page, pagination.limit, appliedSearchTerm, appliedFilterType, appliedFilterStatus]);
 
   const fetchOffers = async () => {
     try {
@@ -88,9 +158,9 @@ export default function OffersPage() {
       const params = new URLSearchParams({
         page: pagination.page.toString(),
         limit: pagination.limit.toString(),
-        search: searchTerm,
-        type: filterType,
-        status: filterStatus
+        search: appliedSearchTerm,
+        type: appliedFilterType,
+        status: appliedFilterStatus
       });
 
       const response = await fetch(`/api/offers?${params}`);
@@ -98,6 +168,12 @@ export default function OffersPage() {
 
       if (response.ok) {
         setOffers(data.offers || []);
+        setStatistics(data.statistics || {
+          totalOffers: 0,
+          activeOffers: 0,
+          scheduledOffers: 0,
+          totalUsage: 0
+        });
         setPagination(prev => ({
           ...prev,
           totalCount: data.pagination?.total || 0,
@@ -105,6 +181,7 @@ export default function OffersPage() {
           hasNext: data.pagination?.hasNext || false,
           hasPrev: data.pagination?.hasPrev || false
         }));
+        setError(''); // 성공 시 에러 초기화
       } else {
         throw new Error(data.error || '오퍼를 불러오는데 실패했습니다.');
       }
@@ -117,15 +194,32 @@ export default function OffersPage() {
   };
 
   const handleSearch = () => {
+    // 현재 입력된 검색 조건을 적용된 검색 조건으로 설정
+    setAppliedSearchTerm(searchTerm);
+    setAppliedFilterType(filterType);
+    setAppliedFilterStatus(filterStatus);
+    
+    // 페이지를 1로 리셋
     setPagination(prev => ({ ...prev, page: 1 }));
-    fetchOffers();
+    
+    // 검색 실행 (useEffect에서 자동으로 호출됨)
   };
 
   const handleReset = () => {
+    // 입력 조건 초기화
     setSearchTerm('');
     setFilterType('all');
     setFilterStatus('all');
+    
+    // 적용된 검색 조건도 초기화
+    setAppliedSearchTerm('');
+    setAppliedFilterType('all');
+    setAppliedFilterStatus('all');
+    
+    // 페이지를 1로 리셋
     setPagination(prev => ({ ...prev, page: 1 }));
+    
+    // 리셋 실행 (useEffect에서 자동으로 호출됨)
   };
 
   const handlePageChange = (newPage: number) => {
@@ -134,6 +228,42 @@ export default function OffersPage() {
 
   const handlePageSizeChange = (newSize: number) => {
     setPagination(prev => ({ ...prev, limit: newSize, page: 1 }));
+  };
+
+  const handleDelete = async (offerId: number, offerName: string) => {
+    const confirmed = await showConfirm(
+      '오퍼 삭제 확인',
+      `정말로 "${offerName}" 오퍼를 삭제하시겠습니까?\n\n⚠️ 삭제된 오퍼는 복구할 수 없습니다.\n\n🔍 캠페인 연관성을 확인한 후 삭제가 진행됩니다:\n• 관련 캠페인이 있는 경우 모든 캠페인이 완료 상태여야 삭제 가능합니다\n• 진행 중이거나 대기 중인 캠페인이 있으면 삭제가 거부됩니다`,
+      {
+        confirmText: '🗑️ 삭제하기',
+        cancelText: '취소',
+        type: 'danger'
+      }
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/offers/${offerId}`, {
+        method: 'DELETE',
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        showToast(data.message || '오퍼가 성공적으로 삭제되었습니다.', 'success');
+        // 삭제 성공 시 목록 새로고침
+        fetchOffers();
+      } else {
+        // API에서 상세한 에러 메시지를 제공하므로 그대로 표시
+        showToast(data.error || '오퍼 삭제에 실패했습니다.', 'error', 8000);
+      }
+    } catch (error) {
+      console.error('오퍼 삭제 오류:', error);
+      showToast('오퍼 삭제 중 네트워크 오류가 발생했습니다.\n잠시 후 다시 시도해주세요.', 'error');
+    }
   };
 
   const getTypeColor = (type: string) => {
@@ -147,13 +277,8 @@ export default function OffersPage() {
   };
 
   const getTypeText = (type: string) => {
-    switch (type) {
-      case 'discount': return '할인';
-      case 'coupon': return '쿠폰';
-      case 'freebie': return '무료제공';
-      case 'point': return '적립금';
-      default: return type;
-    }
+    const typeOption = typeOptions.find(option => option.code === type);
+    return typeOption ? typeOption.name : type;
   };
 
   const getStatusColor = (status: string) => {
@@ -166,18 +291,35 @@ export default function OffersPage() {
   };
 
   const getStatusText = (status: string) => {
-    switch (status) {
-      case 'active': return '활성';
-      case 'inactive': return '비활성';
-      case 'scheduled': return '예정';
-      default: return status;
-    }
+    const statusOption = statusOptions.find(option => option.code === status);
+    return statusOption ? statusOption.name : status;
   };
 
   const formatValue = (offer: Offer) => {
-    if (offer.type === 'freebie') return '무료제공';
+    if (offer.type === 'freebie') return getTypeText('freebie');
     if (offer.value_type === 'percentage') return `${offer.value}%`;
     return `₩${offer.value.toLocaleString()}`;
+  };
+
+  // 페이지 번호 범위 계산 (최대 10개 페이지 번호만 표시)
+  const getPageRange = () => {
+    const maxVisible = 10;
+    const totalPages = pagination.totalPages;
+    const currentPage = pagination.page;
+
+    if (totalPages <= maxVisible) {
+      return Array.from({ length: totalPages }, (_, i) => i + 1);
+    }
+
+    const halfVisible = Math.floor(maxVisible / 2);
+    let start = Math.max(1, currentPage - halfVisible);
+    let end = Math.min(totalPages, start + maxVisible - 1);
+
+    if (end - start < maxVisible - 1) {
+      start = Math.max(1, end - maxVisible + 1);
+    }
+
+    return Array.from({ length: end - start + 1 }, (_, i) => start + i);
   };
 
   if (isLoading) {
@@ -228,28 +370,28 @@ export default function OffersPage() {
           {[
             { 
               label: '전체 오퍼', 
-              value: pagination.totalCount, 
+              value: statistics.totalOffers, 
               color: 'text-blue-600',
               bg: 'bg-blue-50',
               icon: '🎁'
             },
             { 
               label: '활성 오퍼', 
-              value: offers.filter(o => o.status === 'active').length, 
+              value: statistics.activeOffers, 
               color: 'text-green-600',
               bg: 'bg-green-50',
               icon: '✅'
             },
             { 
               label: '총 사용량', 
-              value: offers.reduce((sum, o) => sum + o.usage_count, 0).toLocaleString(), 
+              value: statistics.totalUsage.toLocaleString(), 
               color: 'text-purple-600',
               bg: 'bg-purple-50',
               icon: '📊'
             },
             { 
               label: '예정 오퍼', 
-              value: offers.filter(o => o.status === 'scheduled').length, 
+              value: statistics.scheduledOffers, 
               color: 'text-orange-600',
               bg: 'bg-orange-50',
               icon: '📅'
@@ -288,10 +430,9 @@ export default function OffersPage() {
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
               >
                 <option value="all">전체</option>
-                <option value="discount">할인</option>
-                <option value="coupon">쿠폰</option>
-                <option value="freebie">무료제공</option>
-                <option value="point">적립금</option>
+                {typeOptions.map(option => (
+                  <option key={option.code} value={option.code}>{option.name}</option>
+                ))}
               </select>
             </div>
             <div>
@@ -302,9 +443,9 @@ export default function OffersPage() {
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
               >
                 <option value="all">전체</option>
-                <option value="active">활성</option>
-                <option value="inactive">비활성</option>
-                <option value="scheduled">예정</option>
+                {statusOptions.map(option => (
+                  <option key={option.code} value={option.code}>{option.name}</option>
+                ))}
               </select>
             </div>
             <div className="flex items-end gap-2">
@@ -450,10 +591,30 @@ export default function OffersPage() {
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="text-sm text-gray-900">{offer.created_by}</div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center space-x-2">
-                            <button className="text-blue-600 hover:text-blue-900 transition-colors">수정</button>
-                            <button className="text-red-600 hover:text-red-900 transition-colors">삭제</button>
+                            <Link
+                              href={`/offers/new?id=${offer.id}&mode=view`}
+                              className="inline-flex items-center px-3 py-1 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700 transition-colors"
+                            >
+                              상세보기
+                            </Link>
+                            {isAdmin && (
+                              <>
+                                <Link
+                                  href={`/offers/new?id=${offer.id}&mode=edit`}
+                                  className="inline-flex items-center px-3 py-1 bg-purple-600 text-white text-xs font-medium rounded hover:bg-purple-700 transition-colors"
+                                >
+                                  수정
+                                </Link>
+                                <button 
+                                  onClick={() => handleDelete(offer.id, offer.name)}
+                                  className="inline-flex items-center px-3 py-1 bg-red-600 text-white text-xs font-medium rounded hover:bg-red-700 transition-colors"
+                                >
+                                  삭제
+                                </button>
+                              </>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -462,50 +623,131 @@ export default function OffersPage() {
                 </table>
               </div>
 
-              {/* 페이징 */}
+              {/* 깔끔한 페이징 */}
               <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
-                <div className="flex items-center justify-center space-x-2">
+                <div className="flex flex-col sm:flex-row items-center justify-center space-y-3 sm:space-y-0">
+                  {/* 왼쪽: 간단한 정보 */}
+                  <div className="text-sm text-gray-600">
+                    <span className="font-medium">{pagination.page}</span>
+                    <span className="mx-1 text-gray-400">/</span>
+                    <span>{pagination.totalPages}페이지</span>
+                    <span className="mx-3 text-gray-400">•</span>
+                    <span>총 {pagination.totalCount.toLocaleString()}개</span>
+                  </div>
+
+                  {/* 가운데: 페이지 네비게이션 */}
+                  {pagination.totalPages > 1 && (
+                    <div className="flex items-center space-x-2 sm:mx-8">
+                      {/* 처음/이전 버튼 */}
+                      <div className="flex items-center space-x-1">
+                        <button
+                          onClick={() => handlePageChange(1)}
+                          disabled={pagination.page === 1}
+                          className={`p-2 rounded-lg transition-all duration-200 ${
+                            pagination.page === 1
+                              ? 'text-gray-300 cursor-not-allowed'
+                              : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50 hover:shadow-md'
+                          }`}
+                          title="첫 페이지"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+                          </svg>
+                        </button>
                   <button
                     onClick={() => handlePageChange(pagination.page - 1)}
                     disabled={!pagination.hasPrev}
-                    className={`px-3 py-1 rounded-md ${
-                      pagination.hasPrev
-                        ? 'text-gray-700 hover:bg-gray-100'
-                        : 'text-gray-400 cursor-not-allowed'
+                          className={`p-2 rounded-lg transition-all duration-200 ${
+                            !pagination.hasPrev
+                              ? 'text-gray-300 cursor-not-allowed'
+                              : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50 hover:shadow-md'
                     }`}
-                  >
-                    이전
+                          title="이전 페이지"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
+                          </svg>
                   </button>
-                  {Array.from({ length: pagination.totalPages }, (_, i) => i + 1).map((pageNum) => (
+                      </div>
+
+                      {/* 페이지 번호들 */}
+                      <div className="flex items-center space-x-1">
+                        {getPageRange().map((pageNum) => (
                     <button
                       key={pageNum}
                       onClick={() => handlePageChange(pageNum)}
-                      className={`px-3 py-1 rounded-md ${
+                            className={`min-w-[40px] h-10 px-3 rounded-lg font-medium transition-all duration-200 ${
                         pageNum === pagination.page
-                          ? 'bg-blue-600 text-white'
-                          : 'text-gray-700 hover:bg-gray-100'
+                                                                  ? 'bg-blue-600 text-white shadow-md'
+                                  : 'text-gray-700 hover:text-blue-600 hover:bg-blue-50'
                       }`}
                     >
                       {pageNum}
                     </button>
                   ))}
+                      </div>
+
+                      {/* 다음/마지막 버튼 */}
+                      <div className="flex items-center space-x-1">
                   <button
                     onClick={() => handlePageChange(pagination.page + 1)}
                     disabled={!pagination.hasNext}
-                    className={`px-3 py-1 rounded-md ${
-                      pagination.hasNext
-                        ? 'text-gray-700 hover:bg-gray-100'
-                        : 'text-gray-400 cursor-not-allowed'
-                    }`}
-                  >
-                    다음
+                          className={`p-2 rounded-lg transition-all duration-200 ${
+                            !pagination.hasNext
+                              ? 'text-gray-300 cursor-not-allowed'
+                              : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50 hover:shadow-md'
+                          }`}
+                          title="다음 페이지"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={() => handlePageChange(pagination.totalPages)}
+                          disabled={pagination.page === pagination.totalPages}
+                          className={`p-2 rounded-lg transition-all duration-200 ${
+                            pagination.page === pagination.totalPages
+                              ? 'text-gray-300 cursor-not-allowed'
+                              : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50 hover:shadow-md'
+                          }`}
+                          title="마지막 페이지"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                          </svg>
                   </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 오른쪽: 페이지 점프 (간단하게) */}
+                  {pagination.totalPages > 10 && (
+                    <div className="flex items-center space-x-2 sm:ml-8">
+                      <span className="text-xs text-gray-500">이동:</span>
+                      <select
+                        value={pagination.page}
+                        onChange={(e) => handlePageChange(Number(e.target.value))}
+                        className="px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                      >
+                        {Array.from({ length: pagination.totalPages }, (_, i) => i + 1).map((pageNum) => (
+                          <option key={pageNum} value={pageNum}>
+                            {pageNum}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
               </div>
             </>
           )}
         </div>
       </div>
+      
+      {/* 토스트 및 모달 컴포넌트 */}
+      <ToastContainer />
+      <ConfirmModalComponent />
     </Layout>
   );
 } 

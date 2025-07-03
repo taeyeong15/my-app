@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:clean": "powershell -Command \"if (Test-Path .next) { Remove-Item -Recurse -Force .next }\" && next dev",
     "dev:encrypted": "node scripts/encrypt-env.js && next dev",
     "build": "next build",
     "build:dev": "next build",
@@ -12,6 +13,8 @@
     "start:dev": "next start -p 3000",
     "start:prod": "next start -p 3000",
     "lint": "next lint",
+    "clean": "if exist .next rmdir /s /q .next && if exist node_modules\\.cache rmdir /s /q node_modules\\.cache",
+    "clean:all": "if exist .next rmdir /s /q .next && if exist node_modules\\.cache rmdir /s /q node_modules\\.cache && npm install",
     "encrypt:env": "node scripts/encrypt-env.js",
     "encrypt:dev": "node scripts/encrypt-env-auto.js dev",
     "encrypt:prod": "node scripts/encrypt-env-auto.js prod",
@@ -42,6 +45,7 @@
     "react": "^18",
     "react-dom": "^18",
     "recharts": "^2.15.3",
+    "sqlite3": "^5.1.7",
     "winston": "^3.17.0",
     "winston-daily-rotate-file": "^5.0.0",
     "xlsx": "^0.18.5"

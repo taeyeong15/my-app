@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Layout from '@/components/Layout';
 import { useToast } from '@/components/Toast';
+import { useConfirmModal } from '@/components/ConfirmModal';
 
 interface User {
   id: number;
@@ -65,6 +66,19 @@ interface CampaignFormData {
   status: string;
 }
 
+// 날짜 유틸리티 함수들
+const getTomorrowDate = () => {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return tomorrow.toISOString().split('T')[0];
+};
+
+const getDateAfter = (dateString: string, days: number = 1) => {
+  const date = new Date(dateString);
+  date.setDate(date.getDate() + days);
+  return date.toISOString().split('T')[0];
+};
+
 // SearchParams를 사용하는 내부 컴포넌트
 function NewCampaignContent() {
   const router = useRouter();
@@ -117,6 +131,7 @@ function NewCampaignContent() {
   });
 
   const { showToast, ToastContainer } = useToast();
+  const { showConfirm, ConfirmModalComponent } = useConfirmModal();
 
   useEffect(() => {
     const initializePage = async () => {
@@ -136,6 +151,11 @@ function NewCampaignContent() {
 
         // 수정 모드인 경우 기존 캠페인 데이터 로드
         if (isEditMode && campaignId) {
+          await loadCampaignData(campaignId);
+        }
+
+        // 상세보기인 경우 기존 캠페인 데이터 로드
+        if (isViewMode && campaignId) {
           await loadCampaignData(campaignId);
         }
 
@@ -188,7 +208,6 @@ function NewCampaignContent() {
     try {
       // 모든 필요한 데이터를 병렬로 로드
       const [
-        customerGroupsRes,
         offersRes,
         scriptsRes,
         channelsRes,
@@ -196,7 +215,6 @@ function NewCampaignContent() {
         adminsRes,
         prioritiesRes
       ] = await Promise.all([
-        fetch('/api/customer-groups'),
         fetch('/api/offers'),
         fetch('/api/scripts/simple'),
         fetch('/api/channels/simple'),
@@ -206,7 +224,6 @@ function NewCampaignContent() {
       ]);
 
       const [
-        customerGroupsData,
         offersData,
         scriptsData,
         channelsData,
@@ -214,7 +231,6 @@ function NewCampaignContent() {
         adminsData,
         prioritiesData
       ] = await Promise.all([
-        customerGroupsRes.json(),
         offersRes.json(),
         scriptsRes.json(),
         channelsRes.json(),
@@ -222,6 +238,15 @@ function NewCampaignContent() {
         adminsRes.json(),
         prioritiesRes.json()
       ]);
+
+      
+      const [customerGroupsRes] = await Promise.all([
+        isViewMode ? fetch(`/api/customer-groups?status=active&mode=view&campaignId=${campaignId}`) : 
+        isEditMode ? fetch(`/api/customer-groups?status=active&mode=edit&campaignId=${campaignId}`) : 
+        fetch('/api/customer-groups?status=active&use_yn=N')
+      ]);
+
+      const [customerGroupsData] = await Promise.all([customerGroupsRes.json()]);
 
       if (customerGroupsData.success) {
         setCustomerGroups(customerGroupsData.groups || []);
@@ -307,46 +332,59 @@ function NewCampaignContent() {
 
   const handleSubmit = async (e: React.FormEvent, isDraft = false) => {
     e.preventDefault();
-    setIsSaving(true);
+    
+    if (isSaving) return;
+    
+    // 임시저장이 아닌 경우에만 검증
+    if (!isDraft) {
+      // 필수 항목 검증
+      const missingFields = [];
+      
+      if (!formData.name) missingFields.push('캠페인명');
+      if (!formData.type) missingFields.push('캠페인 유형');
+      if (!formData.start_date) missingFields.push('시작일');
+      if (!formData.end_date) missingFields.push('종료일');
+      if (!formData.budget) missingFields.push('예산');
+      if (!formData.channels) missingFields.push('발송 채널');
+      if (!formData.target_customer_groups) missingFields.push('대상 고객군');
+      if (!formData.scripts) missingFields.push('스크립트');
 
-    try {
-      // 임시저장이 아닌 경우에만 필수 필드 검증
-      if (!isDraft) {
-        const missingFields = [];
-        
-        // 필수 항목 검증
-        if (!formData.name) missingFields.push('캠페인명');
-        if (!formData.type) missingFields.push('캠페인 유형');
-        if (!formData.start_date) missingFields.push('시작일');
-        if (!formData.end_date) missingFields.push('종료일');
-        if (!formData.budget) missingFields.push('예산');
-        if (!formData.channels) missingFields.push('발송 채널');
-        if (!formData.target_customer_groups) missingFields.push('대상 고객군');
-        if (!formData.scripts) missingFields.push('스크립트');
-
-        if (missingFields.length > 0) {
-          showToast(`다음 필수 항목을 입력해주세요:\n• ${missingFields.join('\n• ')}`, 'error');
-          setIsSaving(false);
-          return;
-        }
-
-        // 날짜 검증
-        if (new Date(formData.start_date) >= new Date(formData.end_date)) {
-          showToast('종료일은 시작일보다 늦어야 합니다.', 'error');
-          setIsSaving(false);
-          return;
-        }
-
-        // 예산 검증
-        const budget = parseFloat(formData.budget);
-        if (isNaN(budget) || budget <= 0) {
-          showToast('예산은 0보다 큰 숫자여야 합니다.', 'error');
-          setIsSaving(false);
+      if (missingFields.length > 0) {
+        const errorMessage = '다음 필수 항목을 입력해주세요:\n\n' + missingFields.map(field => `• ${field}`).join('\n');
+        showToast(errorMessage, 'error', 7000);
+        return;
+      }
+      
+      // 시작일 검증 - 오늘 날짜보다 커야 함 (오늘 날짜는 불허용)
+      if (formData.start_date) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const startDate = new Date(formData.start_date);
+        if (startDate <= today) {
+          showToast('캠페인 시작일은 내일 이후로 설정해주세요.', 'error');
           return;
         }
       }
+      
+      // 종료일 검증 - 시작일과 같거나 늦어야 함
+      if (formData.start_date && formData.end_date) {
+        if (new Date(formData.start_date) > new Date(formData.end_date)) {
+          showToast('캠페인 종료일은 시작일과 같거나 늦어야 합니다.', 'error');
+          return;
+        }
+      }
+      
+      // 예산 검증
+      const budget = parseFloat(formData.budget);
+      if (isNaN(budget) || budget <= 0) {
+        showToast('예산은 0보다 큰 숫자여야 합니다.', 'error');
+        return;
+      }
+    }
+    
+    setIsSaving(true);
 
-      // API 요청 데이터 준비
+    try {
       const requestData = {
         ...formData,
         budget: formData.budget ? parseFloat(formData.budget) : 0,
@@ -357,7 +395,7 @@ function NewCampaignContent() {
 
       const url = isEditMode ? `/api/campaigns/${campaignId}` : '/api/campaigns';
       const method = isEditMode ? 'PUT' : 'POST';
-
+      
       const response = await fetch(url, {
         method,
         headers: {
@@ -367,7 +405,7 @@ function NewCampaignContent() {
       });
 
       const data = await response.json();
-
+      
       if (data.success) {
         const message = isDraft 
           ? '캠페인이 임시저장되었습니다!' 
@@ -375,7 +413,13 @@ function NewCampaignContent() {
             ? '캠페인이 성공적으로 수정되었습니다!' 
             : '캠페인이 성공적으로 생성되었습니다!';
         showToast(message, 'success');
-        router.push('/campaigns');
+        
+        // 성공 후 페이지 이동 (임시저장이 아닌 경우만)
+        if (!isDraft) {
+          setTimeout(() => {
+            router.push('/campaigns');
+          }, 1500);
+        }
       } else {
         throw new Error(data.error || data.details || '요청 처리 실패');
       }
@@ -394,6 +438,28 @@ function NewCampaignContent() {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
+    
+    // 시작일 실시간 검증
+    if (name === 'start_date' && value) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const startDate = new Date(value);
+      
+      if (startDate <= today) {
+        showToast('캠페인 시작일은 내일 이후로 설정해주세요.', 'warning', 3000);
+      }
+    }
+    
+    // 종료일 실시간 검증
+    if (name === 'end_date' && value && formData.start_date) {
+      const startDate = new Date(formData.start_date);
+      const endDate = new Date(value);
+      
+      if (endDate < startDate) {
+        showToast('캠페인 종료일은 시작일과 같거나 늦어야 합니다.', 'warning', 3000);
+      }
+    }
+    
     setFormData(prev => ({
       ...prev,
       [name]: value
@@ -446,9 +512,20 @@ function NewCampaignContent() {
       return;
     }
 
-    // 날짜 검증
-    if (new Date(formData.start_date) >= new Date(formData.end_date)) {
-      showToast('종료일은 시작일보다 늦어야 합니다.', 'error');
+    // 시작일 검증 - 오늘 날짜보다 커야 함
+    if (formData.start_date) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const startDate = new Date(formData.start_date);
+      if (startDate <= today) {
+        showToast('캠페인 시작일은 내일 이후로 설정해주세요.', 'error');
+        return;
+      }
+    }
+
+    // 날짜 검증 - 종료일이 시작일과 같거나 늦어야 함
+    if (new Date(formData.start_date) > new Date(formData.end_date)) {
+      showToast('캠페인 종료일은 시작일과 같거나 늦어야 합니다.', 'error');
       return;
     }
 
@@ -683,39 +760,67 @@ function NewCampaignContent() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="flex items-center text-sm font-bold text-gray-700 mb-3">
+                    <label 
+                      htmlFor="start_date"
+                      className="flex items-center text-sm font-bold text-gray-700 mb-3 cursor-pointer"
+                    >
                       <span className="text-red-500 mr-1">*</span>
                       시작일
                     </label>
-                    <input
-                      type="date"
-                      name="start_date"
-                      value={formData.start_date}
-                      onChange={handleInputChange}
-                      disabled={isViewMode}
-                      required
-                      className={`w-full px-4 py-3 border-2 ${formData.start_date ? 'border-indigo-200' : 'border-red-200'} rounded-xl focus:ring-3 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all duration-200 bg-white/80 backdrop-blur-sm ${
-                        isViewMode ? 'bg-gray-50 cursor-not-allowed opacity-60' : 'hover:border-indigo-300'
-                      }`}
-                    />
+                    <div className="relative">
+                      <input
+                        id="start_date"
+                        type="date"
+                        name="start_date"
+                        value={formData.start_date}
+                        onChange={handleInputChange}
+                        disabled={isViewMode}
+                        required
+                        min={getTomorrowDate()}
+                        className={`w-full px-4 py-3 border-2 ${formData.start_date ? 'border-indigo-200' : 'border-red-200'} rounded-xl focus:ring-3 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all duration-200 bg-white/80 backdrop-blur-sm cursor-pointer ${
+                          isViewMode ? 'bg-gray-50 cursor-not-allowed opacity-60' : 'hover:border-indigo-300'
+                        }`}
+                      />
+                      <div 
+                        className="absolute inset-0 cursor-pointer"
+                        onClick={() => {
+                          const input = document.getElementById('start_date') as HTMLInputElement;
+                          (input as any)?.showPicker?.();
+                        }}
+                      />
+                    </div>
                   </div>
 
                   <div>
-                    <label className="flex items-center text-sm font-bold text-gray-700 mb-3">
+                    <label 
+                      htmlFor="end_date"
+                      className="flex items-center text-sm font-bold text-gray-700 mb-3 cursor-pointer"
+                    >
                       <span className="text-red-500 mr-1">*</span>
                       종료일
                     </label>
-                    <input
-                      type="date"
-                      name="end_date"
-                      value={formData.end_date}
-                      onChange={handleInputChange}
-                      disabled={isViewMode}
-                      required
-                      className={`w-full px-4 py-3 border-2 ${formData.end_date ? 'border-indigo-200' : 'border-red-200'} rounded-xl focus:ring-3 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all duration-200 bg-white/80 backdrop-blur-sm ${
-                        isViewMode ? 'bg-gray-50 cursor-not-allowed opacity-60' : 'hover:border-indigo-300'
-                      }`}
-                    />
+                    <div className="relative">
+                      <input
+                        id="end_date"
+                        type="date"
+                        name="end_date"
+                        value={formData.end_date}
+                        onChange={handleInputChange}
+                        disabled={isViewMode}
+                        required
+                        min={formData.start_date || getTomorrowDate()}
+                        className={`w-full px-4 py-3 border-2 ${formData.end_date ? 'border-indigo-200' : 'border-red-200'} rounded-xl focus:ring-3 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all duration-200 bg-white/80 backdrop-blur-sm cursor-pointer ${
+                          isViewMode ? 'bg-gray-50 cursor-not-allowed opacity-60' : 'hover:border-indigo-300'
+                        }`}
+                      />
+                      <div 
+                        className="absolute inset-0 cursor-pointer"
+                        onClick={() => {
+                          const input = document.getElementById('end_date') as HTMLInputElement;
+                          (input as any)?.showPicker?.();
+                        }}
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -895,25 +1000,54 @@ function NewCampaignContent() {
                   
                   {/* 페이징 */}
                   {totalPages > 1 && (
-                    <div className="flex justify-center items-center space-x-4 mt-8">
+                    <div className="flex items-center justify-center space-x-3 mt-6">
                       <button
                         type="button"
                         onClick={() => setCustomerGroupsPage(prev => Math.max(1, prev - 1))}
-                        disabled={customerGroupsPage === 1 || isViewMode}
-                        className="px-4 py-2 text-sm font-medium border-2 border-teal-200 text-teal-600 rounded-xl hover:bg-teal-50 hover:border-teal-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={customerGroupsPage === 1}
+                        className={`p-2 rounded-lg transition-all duration-200 ${
+                          customerGroupsPage === 1
+                            ? 'text-gray-300 cursor-not-allowed'
+                            : 'text-gray-600 hover:text-teal-600 hover:bg-teal-50'
+                        }`}
+                        title="이전 페이지"
                       >
-                        ← 이전
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
+                        </svg>
                       </button>
-                      <span className="px-4 py-2 text-sm font-bold bg-gradient-to-r from-teal-100 to-cyan-100 text-teal-700 rounded-xl">
-                        {customerGroupsPage} / {totalPages}
-                      </span>
+
+                      <div className="flex items-center space-x-1">
+                        {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
+                          <button
+                            key={pageNum}
+                            type="button"
+                            onClick={() => setCustomerGroupsPage(pageNum)}
+                            className={`min-w-[40px] h-10 px-3 rounded-lg font-medium transition-all duration-200 ${
+                              pageNum === customerGroupsPage
+                                ? 'bg-teal-600 text-white shadow-md'
+                                : 'text-gray-700 hover:text-teal-600 hover:bg-teal-50'
+                            }`}
+                          >
+                            {pageNum}
+                          </button>
+                        ))}
+                      </div>
+
                       <button
                         type="button"
                         onClick={() => setCustomerGroupsPage(prev => Math.min(totalPages, prev + 1))}
-                        disabled={customerGroupsPage === totalPages || isViewMode}
-                        className="px-4 py-2 text-sm font-medium border-2 border-teal-200 text-teal-600 rounded-xl hover:bg-teal-50 hover:border-teal-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={customerGroupsPage === totalPages}
+                        className={`p-2 rounded-lg transition-all duration-200 ${
+                          customerGroupsPage === totalPages
+                            ? 'text-gray-300 cursor-not-allowed'
+                            : 'text-gray-600 hover:text-teal-600 hover:bg-teal-50'
+                        }`}
+                        title="다음 페이지"
                       >
-                        다음 →
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                        </svg>
                       </button>
                     </div>
                   )}
@@ -996,25 +1130,54 @@ function NewCampaignContent() {
                   
                   {/* 페이징 */}
                   {totalPages > 1 && (
-                    <div className="flex justify-center items-center space-x-4 mt-8">
+                    <div className="flex items-center justify-center space-x-3 mt-6">
                       <button
                         type="button"
                         onClick={() => setOffersPage(prev => Math.max(1, prev - 1))}
-                        disabled={offersPage === 1 || isViewMode}
-                        className="px-4 py-2 text-sm font-medium border-2 border-blue-200 text-blue-600 rounded-xl hover:bg-blue-50 hover:border-blue-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={offersPage === 1}
+                        className={`p-2 rounded-lg transition-all duration-200 ${
+                          offersPage === 1
+                            ? 'text-gray-300 cursor-not-allowed'
+                            : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50'
+                        }`}
+                        title="이전 페이지"
                       >
-                        ← 이전
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
+                        </svg>
                       </button>
-                      <span className="px-4 py-2 text-sm font-bold bg-gradient-to-r from-blue-100 to-purple-100 text-blue-700 rounded-xl">
-                        {offersPage} / {totalPages}
-                      </span>
+
+                      <div className="flex items-center space-x-1">
+                        {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
+                          <button
+                            key={pageNum}
+                            type="button"
+                            onClick={() => setOffersPage(pageNum)}
+                            className={`min-w-[40px] h-10 px-3 rounded-lg font-medium transition-all duration-200 ${
+                              pageNum === offersPage
+                                ? 'bg-blue-600 text-white shadow-md'
+                                : 'text-gray-700 hover:text-blue-600 hover:bg-blue-50'
+                            }`}
+                          >
+                            {pageNum}
+                          </button>
+                        ))}
+                      </div>
+
                       <button
                         type="button"
                         onClick={() => setOffersPage(prev => Math.min(totalPages, prev + 1))}
-                        disabled={offersPage === totalPages || isViewMode}
-                        className="px-4 py-2 text-sm font-medium border-2 border-blue-200 text-blue-600 rounded-xl hover:bg-blue-50 hover:border-blue-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={offersPage === totalPages}
+                        className={`p-2 rounded-lg transition-all duration-200 ${
+                          offersPage === totalPages
+                            ? 'text-gray-300 cursor-not-allowed'
+                            : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50'
+                        }`}
+                        title="다음 페이지"
                       >
-                        다음 →
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                        </svg>
                       </button>
                     </div>
                   )}
@@ -1124,25 +1287,54 @@ function NewCampaignContent() {
                   
                   {/* 페이징 */}
                   {totalPages > 1 && (
-                    <div className="flex justify-center items-center space-x-4 mt-8">
+                    <div className="flex items-center justify-center space-x-3 mt-6">
                       <button
                         type="button"
                         onClick={() => setScriptsPage(prev => Math.max(1, prev - 1))}
-                        disabled={scriptsPage === 1 || isViewMode}
-                        className="px-4 py-2 text-sm font-medium border-2 border-green-200 text-green-600 rounded-xl hover:bg-green-50 hover:border-green-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={scriptsPage === 1}
+                        className={`p-2 rounded-lg transition-all duration-200 ${
+                          scriptsPage === 1
+                            ? 'text-gray-300 cursor-not-allowed'
+                            : 'text-gray-600 hover:text-green-600 hover:bg-green-50'
+                        }`}
+                        title="이전 페이지"
                       >
-                        ← 이전
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
+                        </svg>
                       </button>
-                      <span className="px-4 py-2 text-sm font-bold bg-gradient-to-r from-green-100 to-emerald-100 text-green-700 rounded-xl">
-                        {scriptsPage} / {totalPages}
-                      </span>
+
+                      <div className="flex items-center space-x-1">
+                        {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
+                          <button
+                            key={pageNum}
+                            type="button"
+                            onClick={() => setScriptsPage(pageNum)}
+                            className={`min-w-[40px] h-10 px-3 rounded-lg font-medium transition-all duration-200 ${
+                              pageNum === scriptsPage
+                                ? 'bg-green-600 text-white shadow-md'
+                                : 'text-gray-700 hover:text-green-600 hover:bg-green-50'
+                            }`}
+                          >
+                            {pageNum}
+                          </button>
+                        ))}
+                      </div>
+
                       <button
                         type="button"
                         onClick={() => setScriptsPage(prev => Math.min(totalPages, prev + 1))}
-                        disabled={scriptsPage === totalPages || isViewMode}
-                        className="px-4 py-2 text-sm font-medium border-2 border-green-200 text-green-600 rounded-xl hover:bg-green-50 hover:border-green-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={scriptsPage === totalPages}
+                        className={`p-2 rounded-lg transition-all duration-200 ${
+                          scriptsPage === totalPages
+                            ? 'text-gray-300 cursor-not-allowed'
+                            : 'text-gray-600 hover:text-green-600 hover:bg-green-50'
+                        }`}
+                        title="다음 페이지"
                       >
-                        다음 →
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                        </svg>
                       </button>
                     </div>
                   )}
@@ -1157,7 +1349,7 @@ function NewCampaignContent() {
               href="/campaigns"
               className="px-8 py-4 text-sm font-bold text-red-600 bg-gradient-to-r from-red-50 to-red-100 border-2 border-red-200 rounded-xl hover:from-red-100 hover:to-red-200 hover:border-red-300 hover:text-red-700 transition-all duration-200 transform hover:scale-105 shadow-lg hover:shadow-xl"
             >
-              ✕ 취소
+              {isViewMode ? '목록으로' : '취소'}
             </Link>
             
             {/* 우측 정렬된 버튼 그룹 - 임시저장, 저장, 승인요청, 삭제 순서 */}
@@ -1212,21 +1404,37 @@ function NewCampaignContent() {
           </div>
         </form>
 
-        {/* 승인 요청 모달 */}
+        {/* 승인 요청 모달 - 모던한 UI로 개선 */}
         {showApprovalModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">캠페인 승인 요청</h3>
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white/95 backdrop-blur-md rounded-3xl shadow-2xl border border-white/20 w-full max-w-lg mx-4 transform transition-all duration-300 scale-100 opacity-100">
+              {/* 헤더 */}
+              <div className="relative p-8 pb-4">
+                <div className="flex items-center space-x-4 mb-2">
+                  <div className="w-12 h-12 bg-gradient-to-r from-green-500 to-emerald-600 rounded-2xl flex items-center justify-center shadow-lg">
+                    <span className="text-white text-xl">✅</span>
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">
+                      캠페인 승인 요청
+                    </h3>
+                    <p className="text-sm text-gray-600 mt-1">승인자에게 캠페인 검토를 요청합니다</p>
+                  </div>
+                </div>
+              </div>
               
-              <div className="space-y-4">
+              {/* 콘텐츠 */}
+              <div className="px-8 pb-8 space-y-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    승인자 선택 <span className="text-red-500">*</span>
+                  <label className="flex items-center text-sm font-bold text-gray-700 mb-3">
+                    <span className="text-red-500 mr-2">*</span>
+                    <span className="text-lg mr-2">👤</span>
+                    승인자 선택
                   </label>
                   <select
                     value={selectedAdmin || ''}
                     onChange={(e) => setSelectedAdmin(Number(e.target.value))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-4 py-3 border-2 border-green-200 rounded-xl focus:ring-3 focus:ring-green-500/20 focus:border-green-500 transition-all duration-200 bg-white/80 backdrop-blur-sm hover:border-green-300 font-medium"
                     required
                   >
                     <option value="">승인자를 선택하세요</option>
@@ -1239,13 +1447,15 @@ function NewCampaignContent() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    우선순위 <span className="text-red-500">*</span>
+                  <label className="flex items-center text-sm font-bold text-gray-700 mb-3">
+                    <span className="text-red-500 mr-2">*</span>
+                    <span className="text-lg mr-2">⚡</span>
+                    우선순위
                   </label>
                   <select
                     value={selectedPriority}
                     onChange={(e) => setSelectedPriority(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-4 py-3 border-2 border-green-200 rounded-xl focus:ring-3 focus:ring-green-500/20 focus:border-green-500 transition-all duration-200 bg-white/80 backdrop-blur-sm hover:border-green-300 font-medium"
                     required
                   >
                     {priorities.length > 0 ? (
@@ -1256,31 +1466,49 @@ function NewCampaignContent() {
                       ))
                     ) : (
                       <>
-                        <option value="urgent">긴급</option>
-                        <option value="high">높음</option>
-                        <option value="normal">보통</option>
-                        <option value="low">낮음</option>
+                        <option value="urgent">🔴 긴급</option>
+                        <option value="high">🟠 높음</option>
+                        <option value="normal">🟡 보통</option>
+                        <option value="low">🟢 낮음</option>
                       </>
                     )}
                   </select>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    승인 요청 메시지 <span className="text-red-500">*</span>
+                  <label className="flex items-center text-sm font-bold text-gray-700 mb-3">
+                    <span className="text-red-500 mr-2">*</span>
+                    <span className="text-lg mr-2">💬</span>
+                    승인 요청 메시지
                   </label>
                   <textarea
                     value={approvalMessage}
                     onChange={(e) => setApprovalMessage(e.target.value)}
                     rows={4}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="승인 요청 사유를 입력해주세요..."
+                    className="w-full px-4 py-3 border-2 border-green-200 rounded-xl focus:ring-3 focus:ring-green-500/20 focus:border-green-500 transition-all duration-200 bg-white/80 backdrop-blur-sm resize-none hover:border-green-300"
+                    placeholder="승인 요청 사유를 상세히 입력해주세요..."
                     required
                   />
                 </div>
+
+                {/* 주의사항 */}
+                <div className="p-4 bg-gradient-to-r from-yellow-50 to-amber-50 border-2 border-yellow-200 rounded-xl">
+                  <div className="flex items-start space-x-3">
+                    <span className="text-xl">⚠️</span>
+                    <div>
+                      <h4 className="font-bold text-yellow-800 text-sm mb-1">승인 요청 전 확인사항</h4>
+                      <ul className="text-xs text-yellow-700 space-y-1">
+                        <li>• 모든 캠페인 정보가 정확한지 확인해주세요</li>
+                        <li>• 승인 후에는 일부 정보를 수정할 수 없습니다</li>
+                        <li>• 승인자가 검토할 수 있도록 상세한 메시지를 작성해주세요</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <div className="flex justify-end space-x-3 mt-6">
+              {/* 액션 버튼 */}
+              <div className="flex justify-end space-x-4 p-8 pt-0">
                 <button
                   type="button"
                   onClick={() => {
@@ -1289,7 +1517,7 @@ function NewCampaignContent() {
                     setSelectedPriority('normal');
                     setApprovalMessage('');
                   }}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                  className="px-6 py-3 text-sm font-bold text-red-600 bg-gradient-to-r from-red-50 to-red-100 border-2 border-red-200 rounded-xl hover:from-red-100 hover:to-red-200 hover:border-red-300 hover:text-red-700 transition-all duration-200 transform hover:scale-105 shadow-lg hover:shadow-xl"
                 >
                   취소
                 </button>
@@ -1297,9 +1525,9 @@ function NewCampaignContent() {
                   type="button"
                   onClick={handleApprovalSubmit}
                   disabled={isSaving || !selectedAdmin || !approvalMessage.trim()}
-                  className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
+                  className="px-6 py-3 text-sm font-bold text-white bg-gradient-to-r from-green-500 to-emerald-600 border-2 border-green-500 rounded-xl hover:from-green-600 hover:to-emerald-700 hover:border-green-600 transition-all duration-200 transform hover:scale-105 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:transform-none"
                 >
-                  {isSaving ? '요청 중...' : '승인 요청'}
+                  {isSaving ? '🚀 요청 중...' : '✅ 승인 요청'}
                 </button>
               </div>
             </div>
@@ -1307,6 +1535,7 @@ function NewCampaignContent() {
         )}
       </div>
       <ToastContainer />
+      <ConfirmModalComponent />
     </Layout>
   );
 }

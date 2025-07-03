@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      codes
+      data: codes
     });
   } catch (error) {
     console.error('공통코드 조회 오류:', error);
