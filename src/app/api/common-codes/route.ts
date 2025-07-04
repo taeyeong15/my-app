@@ -6,31 +6,64 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const category = searchParams.get('category');
     const subCategory = searchParams.get('sub_category');
+    const search = searchParams.get('search') || '';
+    const page = parseInt(searchParams.get('page') || '1');
+    const limit = searchParams.get('limit');
+    const offset = page > 1 ? (page - 1) * (parseInt(limit || '10')) : 0;
 
-    let query = `
-      SELECT category, sub_category, code, name, description, sort_order
-      FROM common_codes 
-      WHERE is_active = TRUE
-    `;
+    let whereClause = 'WHERE is_active = TRUE';
     const params = [];
 
     if (category) {
-      query += ' AND category = ?';
+      whereClause += ' AND category = ?';
       params.push(category);
     }
 
     if (subCategory) {
-      query += ' AND sub_category = ?';
+      whereClause += ' AND sub_category = ?';
       params.push(subCategory);
     }
 
-    query += ' ORDER BY category, sub_category, sort_order, code';
+    if (search) {
+      whereClause += ' AND (name LIKE ? OR code LIKE ? OR description LIKE ?)';
+      const searchTerm = `%${search}%`;
+      params.push(searchTerm, searchTerm, searchTerm);
+    }
+
+    // 총 개수 조회
+    const [countResult] = await pool.execute(
+      `SELECT COUNT(*) as total FROM common_codes ${whereClause}`,
+      params
+    );
+    const total = (countResult as any[])[0].total;
+
+    // 데이터 조회 - limit이 없으면 LIMIT 절 제거
+    let query = `
+      SELECT category, sub_category, code, name, description, sort_order
+      FROM common_codes 
+      ${whereClause}
+      ORDER BY category, sub_category, sort_order, code
+    `;
+    
+    if (limit) {
+      query += ` LIMIT ${parseInt(limit)} OFFSET ${offset}`;
+    }
 
     const [codes] = await pool.execute(query, params);
 
+    const totalPages = limit ? Math.ceil(total / parseInt(limit)) : 1;
+
     return NextResponse.json({
       success: true,
-      data: codes
+      data: codes,
+      pagination: {
+        page,
+        limit: limit ? parseInt(limit) : total,
+        total,
+        totalPages,
+        hasNext: limit ? page < totalPages : false,
+        hasPrev: page > 1
+      }
     });
   } catch (error) {
     console.error('공통코드 조회 오류:', error);

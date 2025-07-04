@@ -131,7 +131,7 @@ export default function PendingCampaignsPage() {
       const data = await response.json();
       
       if (response.ok) {
-        setPriorityCodes(data.codes || []);
+        setPriorityCodes(data.data || []);
       } else {
         console.error('우선순위 코드 조회 실패:', data.error);
       }

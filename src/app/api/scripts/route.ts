@@ -8,10 +8,9 @@ export async function GET(request: NextRequest) {
   const search = searchParams.get('search') || '';
   const status = searchParams.get('status');
   const type = searchParams.get('type');
-  const approval = searchParams.get('approval');
   const offset = (page - 1) * limit;
 
-  console.log('Scripts API GET - 파라미터:', { page, limit, search, status, type, approval, offset });
+  console.log('Scripts API GET - 파라미터:', { page, limit, search, status, type, offset });
 
   try {
     let whereClause = 'WHERE 1=1';
@@ -36,11 +35,7 @@ export async function GET(request: NextRequest) {
       whereParams.push(type);
     }
 
-    // 승인 상태 필터
-    if (approval && approval !== 'all') {
-      whereClause += ' AND approval_status = ?';
-      whereParams.push(approval);
-    }
+
 
     console.log('Scripts API GET - 쿼리 파라미터:', { whereClause, whereParams });
 
@@ -55,9 +50,8 @@ export async function GET(request: NextRequest) {
     // 데이터 조회
     const mainQuery = `
       SELECT 
-        id, name, description, type, status, approval_status, content, 
-        variables, subject, created_by, approved_by, approved_at, 
-        created_at, updated_at
+        id, name, description, type, status, content, 
+        variables, subject, created_by, created_at, updated_at
       FROM scripts
       ${whereClause}
       ORDER BY created_at DESC
@@ -124,34 +118,73 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { 
-      name, 
-      description, 
-      type, 
-      content, 
-      subject, 
-      variables, 
-      created_by 
+    const {
+      name,
+      description,
+      type,
+      content,
+      subject,
+      variables,
+      created_by,
+      sourceId,
+      newName
     } = body;
 
-    // 필수 필드 검증
+    // 복사 API 분기
+    if (sourceId) {
+      if (!newName || !created_by) {
+        return NextResponse.json({
+          success: false,
+          error: '새 이름과 생성자 정보가 필요합니다.'
+        }, { status: 400 });
+      }
+      const [originalScripts] = await pool.execute(
+        'SELECT * FROM scripts WHERE id = ?',
+        [sourceId]
+      );
+      const originalScript = (originalScripts as any[])[0];
+      if (!originalScript) {
+        return NextResponse.json({
+          success: false,
+          error: '복사할 스크립트를 찾을 수 없습니다.'
+        }, { status: 404 });
+      }
+      const insertQuery = `
+        INSERT INTO scripts (
+          name, description, type, status, content,
+          variables, subject, created_by, created_at, updated_at
+        ) VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, NOW(), NOW())
+      `;
+      const [result] = await pool.execute(insertQuery, [
+        newName,
+        originalScript.description,
+        originalScript.type,
+        originalScript.content,
+        originalScript.variables,
+        originalScript.subject,
+        created_by
+      ]);
+      const newScriptId = (result as any).insertId;
+      return NextResponse.json({
+        success: true,
+        message: '스크립트가 성공적으로 복사되었습니다.',
+        data: { id: newScriptId, name: newName }
+      });
+    }
+
     if (!name || !type || !content || !created_by) {
       return NextResponse.json({
         success: false,
         error: '필수 필드가 누락되었습니다. (name, type, content, created_by)'
       }, { status: 400 });
     }
-
-    // variables를 JSON 문자열로 변환
     const variablesJson = variables ? JSON.stringify(variables) : null;
-
     const query = `
       INSERT INTO scripts (
-        name, description, type, status, approval_status, content, 
+        name, description, type, status, content,
         variables, subject, created_by
-      ) VALUES (?, ?, ?, 'draft', 'pending', ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, 'draft', ?, ?, ?, ?)
     `;
-
     const [result] = await pool.execute(query, [
       name,
       description || null,
@@ -161,20 +194,17 @@ export async function POST(request: NextRequest) {
       subject || null,
       created_by
     ]);
-
     const insertId = (result as any).insertId;
-
     return NextResponse.json({
       success: true,
       message: '스크립트가 성공적으로 생성되었습니다.',
       data: { id: insertId }
     });
-
   } catch (error: any) {
-    console.error('스크립트 생성 오류:', error);
+    console.error('스크립트 생성/복사 오류:', error);
     return NextResponse.json({
       success: false,
-      error: '스크립트 생성에 실패했습니다: ' + error.message
+      error: '스크립트 생성/복사에 실패했습니다: ' + error.message
     }, { status: 500 });
   }
 }
@@ -203,7 +233,7 @@ export async function PUT(request: NextRequest) {
 
     // 스크립트 존재 확인
     const [existingScript] = await pool.execute(
-      'SELECT id, approval_status FROM scripts WHERE id = ?',
+      'SELECT id FROM scripts WHERE id = ?',
       [id]
     );
 

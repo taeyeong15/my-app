@@ -170,29 +170,58 @@ function CustomerSegmentContent() {
       const response = await fetch('/api/common-codes?category=CUSTOMER');
       if (response.ok) {
         const data = await response.json();
-        const codes = data.codes as CommonCode[];
-        
-        // 카테고리별로 분류
+        // codes → data로 접근, undefined/null 방지
+        const codes = Array.isArray(data.data) ? data.data as CommonCode[] : [];
         setCommonCodes({
-          gender: codes.filter(c => c.sub_category === 'GENDER'),
-          marriageStatus: codes.filter(c => c.sub_category === 'MARRIAGE_STATUS'),
-          memberGrade: codes.filter(c => c.sub_category === 'MEMBER_GRADE'),
-          marketingAgree: codes.filter(c => c.sub_category === 'MARKETING_AGREE'),
-          foreigner: codes.filter(c => c.sub_category === 'FOREIGNER'),
-          memberStatus: codes.filter(c => c.sub_category === 'MEMBER_STATUS'),
-          address: codes.filter(c => c.sub_category === 'ADDRESS'),
-          anniversaryType: codes.filter(c => c.sub_category === 'ANNIVERSARY_TYPE'),
-          emailDomain: codes.filter(c => c.sub_category === 'EMAIL_DOMAIN'),
-          smsAgree: codes.filter(c => c.sub_category === 'SMS_AGREE'),
-          emailAgree: codes.filter(c => c.sub_category === 'EMAIL_AGREE'),
-          kakaoAgree: codes.filter(c => c.sub_category === 'KAKAO_AGREE'),
-          appPushAgree: codes.filter(c => c.sub_category === 'APP_PUSH_AGREE')
+          gender: codes.filter((c: CommonCode) => c.sub_category === 'GENDER'),
+          marriageStatus: codes.filter((c: CommonCode) => c.sub_category === 'MARRIAGE_STATUS'),
+          memberGrade: codes.filter((c: CommonCode) => c.sub_category === 'MEMBER_GRADE'),
+          marketingAgree: codes.filter((c: CommonCode) => c.sub_category === 'MARKETING_AGREE'),
+          foreigner: codes.filter((c: CommonCode) => c.sub_category === 'FOREIGNER'),
+          memberStatus: codes.filter((c: CommonCode) => c.sub_category === 'MEMBER_STATUS'),
+          address: codes.filter((c: CommonCode) => c.sub_category === 'ADDRESS'),
+          anniversaryType: codes.filter((c: CommonCode) => c.sub_category === 'ANNIVERSARY_TYPE'),
+          emailDomain: codes.filter((c: CommonCode) => c.sub_category === 'EMAIL_DOMAIN'),
+          smsAgree: codes.filter((c: CommonCode) => c.sub_category === 'SMS_AGREE'),
+          emailAgree: codes.filter((c: CommonCode) => c.sub_category === 'EMAIL_AGREE'),
+          kakaoAgree: codes.filter((c: CommonCode) => c.sub_category === 'KAKAO_AGREE'),
+          appPushAgree: codes.filter((c: CommonCode) => c.sub_category === 'APP_PUSH_AGREE')
         });
       } else {
         console.error('공통코드 로드 실패:', response.statusText);
+        setCommonCodes({
+          gender: [],
+          marriageStatus: [],
+          memberGrade: [],
+          marketingAgree: [],
+          foreigner: [],
+          memberStatus: [],
+          address: [],
+          anniversaryType: [],
+          emailDomain: [],
+          smsAgree: [],
+          emailAgree: [],
+          kakaoAgree: [],
+          appPushAgree: []
+        });
       }
     } catch (error) {
       console.error('공통코드 로드 중 오류:', error);
+      setCommonCodes({
+        gender: [],
+        marriageStatus: [],
+        memberGrade: [],
+        marketingAgree: [],
+        foreigner: [],
+        memberStatus: [],
+        address: [],
+        anniversaryType: [],
+        emailDomain: [],
+        smsAgree: [],
+        emailAgree: [],
+        kakaoAgree: [],
+        appPushAgree: []
+      });
     }
   };
 

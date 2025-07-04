@@ -60,11 +60,7 @@ export async function GET(request: NextRequest, context: RouteContext) {
         notes: script.notes || ''
       },
       created_at: script.created_at,
-      updated_at: script.updated_at,
-      approval_status: script.approval_status,
-      approved_by: script.approved_by,
-      approved_at: script.approved_at,
-      rejection_reason: script.rejection_reason
+      updated_at: script.updated_at
     };
 
     return NextResponse.json({
@@ -87,31 +83,17 @@ export async function PUT(
   request: NextRequest,
   context: { params: { id: string } }
 ) {
-  const connection = await pool.getConnection();
   try {
     const body = await request.json();
+    const { name, type, content, subject, variables, status } = body;
     
     // 스크립트 수정
-    const [result] = await connection.execute(
+    const [result] = await pool.execute(
       `UPDATE scripts SET 
-        name = ?, type = ?, description = ?, status = ?,
-        greeting = ?, introduction = ?, main_script = ?, objection_handling = ?, closing = ?,
-        target_age_min = ?, target_age_max = ?, target_gender = ?,
-        call_time_start = ?, call_time_end = ?,
-        monday_available = ?, tuesday_available = ?, wednesday_available = ?, thursday_available = ?,
-        friday_available = ?, saturday_available = ?, sunday_available = ?,
-        dos = ?, donts = ?, notes = ?,
-        updated_at = NOW()
+        name = ?, type = ?, content = ?, subject = ?, variables = ?, status = ?, updated_at = NOW()
       WHERE id = ?`,
       [
-        body.name, body.type, body.description, body.status,
-        body.greeting, body.introduction, body.main_script, body.objection_handling, body.closing,
-        body.target_age_min, body.target_age_max, body.target_gender,
-        body.call_time_start, body.call_time_end,
-        body.monday_available, body.tuesday_available, body.wednesday_available, body.thursday_available,
-        body.friday_available, body.saturday_available, body.sunday_available,
-        body.dos, body.donts, body.notes,
-        context.params.id
+        name, type, content, subject, variables, status, context.params.id
       ]
     );
 
@@ -120,27 +102,25 @@ export async function PUT(
       message: '스크립트가 성공적으로 수정되었습니다.'
     });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('스크립트 수정 실패:', error);
     return NextResponse.json(
-      { success: false, message: '스크립트 수정 중 오류가 발생했습니다.' },
+      { success: false, error: '스크립트 수정 중 오류가 발생했습니다: ' + error.message },
       { status: 500 }
     );
-  } finally {
-    connection.release();
   }
 }
 
-// 스크립트 상태 업데이트 (승인/거절/활성화/비활성화)
+// 스크립트 상태 업데이트 (활성화/비활성화)
 export async function PATCH(request: NextRequest, context: RouteContext) {
   try {
     const { id } = context.params;
     const body = await request.json();
-    const { action, approved_by } = body;
+    const { action } = body;
 
     // 스크립트 존재 확인
     const [existingScript] = await pool.execute(
-      'SELECT id, status, approval_status FROM scripts WHERE id = ?',
+      'SELECT id, status FROM scripts WHERE id = ?',
       [id]
     );
 
@@ -157,47 +137,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     let message = '';
 
     switch (action) {
-      case 'approve':
-        if (!approved_by) {
-          return NextResponse.json({
-            success: false,
-            error: '승인자 정보가 필요합니다.'
-          }, { status: 400 });
-        }
-        query = `UPDATE scripts SET 
-          approval_status = 'approved', 
-          approved_by = ?, 
-          approved_at = CURRENT_TIMESTAMP,
-          updated_at = CURRENT_TIMESTAMP 
-          WHERE id = ?`;
-        params = [approved_by, id];
-        message = '스크립트가 승인되었습니다.';
-        break;
-
-      case 'reject':
-        if (!approved_by) {
-          return NextResponse.json({
-            success: false,
-            error: '처리자 정보가 필요합니다.'
-          }, { status: 400 });
-        }
-        query = `UPDATE scripts SET 
-          approval_status = 'rejected', 
-          approved_by = ?, 
-          approved_at = CURRENT_TIMESTAMP,
-          updated_at = CURRENT_TIMESTAMP 
-          WHERE id = ?`;
-        params = [approved_by, id];
-        message = '스크립트가 거절되었습니다.';
-        break;
-
       case 'activate':
-        if (script.approval_status !== 'approved') {
-          return NextResponse.json({
-            success: false,
-            error: '승인된 스크립트만 활성화할 수 있습니다.'
-          }, { status: 400 });
-        }
         query = `UPDATE scripts SET 
           status = 'active', 
           updated_at = CURRENT_TIMESTAMP 

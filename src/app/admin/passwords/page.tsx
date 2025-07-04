@@ -429,15 +429,15 @@ export default function AdminPasswordsPage() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                           <div className="flex items-center space-x-2">
-                            <button className="text-blue-600 hover:text-blue-900 transition-colors">편집</button>
-                            <button className="text-green-600 hover:text-green-900 transition-colors">권한</button>
-                            <button className="text-purple-600 hover:text-purple-900 transition-colors">비밀번호</button>
+                            <button className="inline-flex items-center px-3 py-1 bg-purple-600 text-white text-xs font-medium rounded hover:bg-purple-700 transition-colors">편집</button>
+                            <button className="inline-flex items-center px-3 py-1 bg-gray-600 text-white text-xs font-medium rounded hover:bg-gray-700 transition-colors">권한</button>
+                            <button className="inline-flex items-center px-3 py-1 bg-gray-600 text-white text-xs font-medium rounded hover:bg-gray-700 transition-colors">비밀번호</button>
                             {user.status === 'active' ? (
-                              <button className="text-yellow-600 hover:text-yellow-900 transition-colors">비활성화</button>
+                              <button className="inline-flex items-center px-3 py-1 bg-gray-600 text-white text-xs font-medium rounded hover:bg-gray-700 transition-colors">비활성화</button>
                             ) : user.status === 'pending' ? (
-                              <button className="text-green-600 hover:text-green-900 transition-colors">승인</button>
+                              <button className="inline-flex items-center px-3 py-1 bg-green-600 text-white text-xs font-medium rounded hover:bg-green-700 transition-colors">승인</button>
                             ) : (
-                              <button className="text-green-600 hover:text-green-900 transition-colors">활성화</button>
+                              <button className="inline-flex items-center px-3 py-1 bg-green-600 text-white text-xs font-medium rounded hover:bg-green-700 transition-colors">활성화</button>
                             )}
                 </div>
                         </td>

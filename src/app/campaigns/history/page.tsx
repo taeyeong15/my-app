@@ -111,7 +111,7 @@ export default function CampaignHistoryPage() {
       const data = await response.json();
       
       if (response.ok) {
-        setActionTypeCodes(data.codes || []);
+        setActionTypeCodes(data.data || []);
       } else {
         console.error('액션타입 코드 조회 실패:', data.error);
       }

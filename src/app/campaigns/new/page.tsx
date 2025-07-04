@@ -287,7 +287,7 @@ function NewCampaignContent() {
       }
 
       if (typesData.success) {
-        setCampaignTypes(typesData.codes || []);
+        setCampaignTypes(typesData.data || []);
       }
 
       if (adminsData.success) {
@@ -295,7 +295,7 @@ function NewCampaignContent() {
       }
 
       if (prioritiesData.success) {
-        setPriorities(prioritiesData.codes || []);
+        setPriorities(prioritiesData.data || []);
       }
     } catch (error) {
       console.error('초기 데이터 로드 실패:', error);

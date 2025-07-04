@@ -13,13 +13,10 @@ interface Script {
   description?: string;
   type: string;
   status: string;
-  approval_status: 'approved' | 'pending' | 'rejected';
   content: string;
   variables?: any; // JSON 데이터
   subject?: string; // 새로 추가된 제목 필드
   created_by: string;
-  approved_by?: string; // 승인자
-  approved_at?: string; // 승인일시
   created_at: string;
   updated_at: string;
 }
@@ -67,13 +64,11 @@ export default function ScriptsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
-  const [filterApproval, setFilterApproval] = useState('all');
   
   // 실제 검색에 사용되는 조건 (검색 버튼 클릭 시에만 업데이트)
   const [appliedSearchTerm, setAppliedSearchTerm] = useState('');
   const [appliedFilterType, setAppliedFilterType] = useState('all');
   const [appliedFilterStatus, setAppliedFilterStatus] = useState('all');
-  const [appliedFilterApproval, setAppliedFilterApproval] = useState('all');
   
   const [pagination, setPagination] = useState<Pagination>({
     page: 1,
@@ -87,7 +82,6 @@ export default function ScriptsPage() {
   // 동적 옵션 데이터
   const [channelTypes, setChannelTypes] = useState<ChannelType[]>([]);
   const [statusOptions, setStatusOptions] = useState<CommonCode[]>([]);
-  const [approvalOptions, setApprovalOptions] = useState<CommonCode[]>([]);
   
   // 복사 모달 관련 상태
   const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
@@ -128,16 +122,15 @@ export default function ScriptsPage() {
     if (!isLoading) { // 초기 로딩이 아닐 때만
       fetchScripts();
     }
-  }, [pagination.page, pagination.limit, appliedSearchTerm, appliedFilterType, appliedFilterStatus, appliedFilterApproval]);
+  }, [pagination.page, pagination.limit, appliedSearchTerm, appliedFilterType, appliedFilterStatus]);
 
   // 옵션 데이터 로딩
   const loadOptionsData = async () => {
     try {
       // 병렬로 모든 옵션 데이터 로딩
-      const [channelTypesRes, statusRes, approvalRes] = await Promise.all([
+      const [channelTypesRes, statusRes] = await Promise.all([
         fetch('/api/channels/types'),
-        fetch('/api/common-codes?category=SCRIPT&sub_category=STATUS'),
-        fetch('/api/common-codes?category=SCRIPT&sub_category=APPROVAL_STATUS')
+        fetch('/api/common-codes?category=SCRIPT&sub_category=STATUS')
       ]);
 
       // 채널 타입
@@ -155,14 +148,6 @@ export default function ScriptsPage() {
           setStatusOptions(statusData.data || []);
         }
       }
-
-      // 승인상태 옵션
-      if (approvalRes.ok) {
-        const approvalData = await approvalRes.json();
-        if (approvalData.success) {
-          setApprovalOptions(approvalData.data || []);
-        }
-      }
     } catch (error) {
       console.error('옵션 데이터 로딩 실패:', error);
     }
@@ -176,8 +161,7 @@ export default function ScriptsPage() {
         limit: pagination.limit.toString(),
         search: appliedSearchTerm,
         type: appliedFilterType,
-        status: appliedFilterStatus,
-        approval: appliedFilterApproval
+        status: appliedFilterStatus
       });
 
       const response = await fetch(`/api/scripts?${params}`);
@@ -204,35 +188,20 @@ export default function ScriptsPage() {
   };
 
   const handleSearch = () => {
-    // 현재 입력된 검색 조건을 적용된 검색 조건으로 설정
     setAppliedSearchTerm(searchTerm);
     setAppliedFilterType(filterType);
     setAppliedFilterStatus(filterStatus);
-    setAppliedFilterApproval(filterApproval);
-    
-    // 페이지를 1로 리셋
     setPagination(prev => ({ ...prev, page: 1 }));
-    
-    // 검색 실행 (useEffect에서 자동으로 호출됨)
   };
 
   const handleReset = () => {
-    // 입력 조건 초기화
     setSearchTerm('');
     setFilterType('all');
     setFilterStatus('all');
-    setFilterApproval('all');
-    
-    // 적용된 검색 조건도 초기화
     setAppliedSearchTerm('');
     setAppliedFilterType('all');
     setAppliedFilterStatus('all');
-    setAppliedFilterApproval('all');
-    
-    // 페이지를 1로 리셋
     setPagination(prev => ({ ...prev, page: 1 }));
-    
-    // 리셋 실행 (useEffect에서 자동으로 호출됨)
   };
 
   const handlePageChange = (newPage: number) => {
@@ -259,12 +228,13 @@ export default function ScriptsPage() {
     try {
       setIsCopying(true);
       
-      const response = await fetch(`/api/scripts/${scriptToCopy.id}/copy`, {
+      const response = await fetch(`/api/scripts`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
+          sourceId: scriptToCopy.id,
           newName: copyScriptName.trim(),
           created_by: user.email
         }),
@@ -358,24 +328,6 @@ export default function ScriptsPage() {
     );
   };
 
-  const getApprovalBadge = (approval: string) => {
-    const badges = {
-      approved: 'bg-green-100 text-green-800',
-      pending: 'bg-yellow-100 text-yellow-800',
-      rejected: 'bg-red-100 text-red-800'
-    };
-    
-    // 동적 데이터에서 라벨 찾기
-    const approvalOption = approvalOptions.find(opt => opt.code === approval);
-    const label = approvalOption ? approvalOption.name : approval;
-
-    return (
-      <span className={`inline-flex px-3 py-1 text-xs font-semibold rounded-full ${badges[approval as keyof typeof badges]}`}>
-        {label}
-      </span>
-    );
-  };
-
   const getTypeIcon = (type: string) => {
     switch (type) {
       case 'email': return '📧';
@@ -457,7 +409,7 @@ export default function ScriptsPage() {
     >
       <div className="p-6 space-y-6">
         {/* 통계 대시보드 */}
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {[
             { 
               label: '전체 스크립트', 
@@ -465,20 +417,6 @@ export default function ScriptsPage() {
               color: 'text-blue-600',
               bg: 'bg-blue-50',
               icon: '📄'
-            },
-            { 
-              label: '승인 완료', 
-              value: scripts.filter(s => s.approval_status === 'approved').length, 
-              color: 'text-green-600',
-              bg: 'bg-green-50',
-              icon: '✅'
-            },
-            { 
-              label: '승인 대기', 
-              value: scripts.filter(s => s.approval_status === 'pending').length, 
-              color: 'text-yellow-600',
-              bg: 'bg-yellow-50',
-              icon: '⏳'
             },
             { 
               label: '활성', 
@@ -509,7 +447,7 @@ export default function ScriptsPage() {
 
         {/* 필터 및 검색 */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">검색</label>
               <input
@@ -546,21 +484,6 @@ export default function ScriptsPage() {
                 {statusOptions.map((statusOption) => (
                   <option key={statusOption.code} value={statusOption.code}>
                     {statusOption.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">승인상태</label>
-              <select
-                value={filterApproval}
-                onChange={(e) => setFilterApproval(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-              >
-                <option value="all">전체</option>
-                {approvalOptions.map((approvalOption) => (
-                  <option key={approvalOption.code} value={approvalOption.code}>
-                    {approvalOption.name}
                   </option>
                 ))}
               </select>
@@ -656,7 +579,6 @@ export default function ScriptsPage() {
                       <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">제목/내용</th>
                       <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">유형</th>
                       <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">상태</th>
-                      <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">승인 정보</th>
                       <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">생성 정보</th>
                       <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">액션</th>
                     </tr>
@@ -664,24 +586,21 @@ export default function ScriptsPage() {
                   <tbody className="bg-white divide-y divide-gray-200">
                     {scripts.map((script) => (
                       <tr key={script.id} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-6 py-4">
+                        <td className="px-6 py-4 whitespace-nowrap">
                           <div>
-                            <div className="text-sm font-medium text-gray-900 mb-1">{script.name}</div>
-                            <div className="text-xs text-gray-500 max-w-xs truncate">{script.description}</div>
-                            {script.variables && (
-                              <div className="text-xs text-blue-600 mt-1">
-                                변수 {Array.isArray(script.variables) ? script.variables.length : Object.keys(script.variables).length}개
-                              </div>
+                            <div className="text-sm font-medium text-gray-900">{script.name}</div>
+                            {script.description && (
+                              <div className="text-sm text-gray-500">{script.description}</div>
                             )}
                           </div>
                         </td>
                         <td className="px-6 py-4">
-                          <div>
+                          <div className="max-w-xs">
                             {script.subject && (
                               <div className="text-sm font-medium text-gray-900 mb-1">{script.subject}</div>
                             )}
-                            <div className="text-xs text-gray-500 max-w-xs truncate">
-                              {script.content?.substring(0, 100)}{script.content?.length > 100 ? '...' : ''}
+                            <div className="text-sm text-gray-500 line-clamp-2">
+                              {script.content}
                             </div>
                           </div>
                         </td>
@@ -696,22 +615,7 @@ export default function ScriptsPage() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div>
-                          {getApprovalBadge(script.approval_status)}
-                            {script.approved_by && (
-                              <div className="text-xs text-gray-500 mt-1">
-                                승인자: {script.approved_by}
-                              </div>
-                            )}
-                            {script.approved_at && (
-                              <div className="text-xs text-gray-500">
-                                {new Date(script.approved_at).toLocaleDateString('ko-KR')}
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div>
-                          <div className="text-sm text-gray-900">{script.created_by}</div>
+                            <div className="text-sm text-gray-900">{script.created_by}</div>
                             <div className="text-xs text-gray-500">
                               {new Date(script.created_at).toLocaleDateString('ko-KR')}
                             </div>
@@ -719,109 +623,51 @@ export default function ScriptsPage() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                           <div className="flex items-center space-x-2">
-                            {script.approval_status === 'pending' ? (
-                              <>
-                                {isAdmin && (
-                                  <button className="inline-flex items-center px-3 py-1 bg-green-600 text-white text-xs font-medium rounded hover:bg-green-700 transition-colors">
-                                    <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-                                    </svg>
-                                    승인
-                                  </button>
-                                )}
-                                {isAdmin && (
-                                  <button className="inline-flex items-center px-3 py-1 bg-red-600 text-white text-xs font-medium rounded hover:bg-red-700 transition-colors">
-                                    <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                    거절
-                                  </button>
-                                )}
-                                {/* 수정 버튼 (관리자만) */}
-                                {isAdmin && (
-                                  <button className="inline-flex items-center px-3 py-1 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700 transition-colors">
-                                    <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                    </svg>
-                                    수정
-                                  </button>
-                                )}
-                              </>
-                                                          ) : script.approval_status === 'approved' ? (
-                                <>
-                                  {/* 활성/비활성 토글 스위치 (관리자만) */}
-                                  {isAdmin && (
-                                    <button
-                                      onClick={() => handleStatusToggle(script.id, script.status, script.name)}
-                                      className={`relative inline-flex items-center h-6 w-11 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 ${
-                                        script.status === 'active' 
-                                          ? 'bg-green-600 focus:ring-green-500' 
-                                          : 'bg-gray-300 focus:ring-gray-500'
-                                      }`}
-                                      title={`${script.status === 'active' ? '비활성화' : '활성화'}`}
-                                    >
-                                      <span
-                                        className={`inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-200 ${
-                                          script.status === 'active' ? 'translate-x-6' : 'translate-x-1'
-                                        }`}
-                                      />
-                                    </button>
-                                  )}
-                                  
-                                  {/* 수정 버튼 (관리자만) */}
-                                  {isAdmin && (
-                                    <button className="inline-flex items-center px-3 py-1 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700 transition-colors">
-                                      <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                      </svg>
-                                      수정
-                                    </button>
-                                  )}
-                                  
-                                  <button 
-                                    onClick={() => router.push(`/scripts/new?mode=view&id=${script.id}`)}
-                                    className="inline-flex items-center px-3 py-1 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700 transition-colors"
-                                  >
-                                    상세보기
-                                  </button>
-                                  
-                                  <button 
-                                    onClick={() => handleCopyScript(script)}
-                                    className="inline-flex items-center px-3 py-1 bg-purple-600 text-white text-xs font-medium rounded hover:bg-purple-700 transition-colors"
-                                  >
-                                    복사
-                                  </button>
-                                </>
-                              ) : (
-                              // rejected 상태
-                              <>
-                                {isAdmin && (
-                                  <button className="inline-flex items-center px-3 py-1 bg-orange-600 text-white text-xs font-medium rounded hover:bg-orange-700 transition-colors">
-                                    <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
-                                    재검토
-                                  </button>
-                                )}
-                                {/* 수정 버튼 (관리자만) */}
-                                {isAdmin && (
-                                  <button className="inline-flex items-center px-3 py-1 bg-gray-600 text-white text-xs font-medium rounded hover:bg-gray-700 transition-colors">
-                                    <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                    </svg>
-                                    수정
-                                  </button>
-                                )}
-                                {isAdmin && (
-                                  <button className="inline-flex items-center px-3 py-1 bg-red-600 text-white text-xs font-medium rounded hover:bg-red-700 transition-colors">
-                                    <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                    </svg>
-                                    삭제
-                                  </button>
-                                )}
-                              </>
+                            {/* 활성/비활성 토글 스위치 (관리자만) */}
+                            {isAdmin && (
+                              <button
+                                onClick={() => handleStatusToggle(script.id, script.status, script.name)}
+                                className={`relative inline-flex items-center h-6 w-11 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 ${
+                                  script.status === 'active' 
+                                    ? 'bg-green-600 focus:ring-green-500' 
+                                    : 'bg-gray-300 focus:ring-gray-500'
+                                }`}
+                                title={`${script.status === 'active' ? '비활성화' : '활성화'}`}
+                              >
+                                <span
+                                  className={`inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-200 ${
+                                    script.status === 'active' ? 'translate-x-6' : 'translate-x-1'
+                                  }`}
+                                />
+                              </button>
                             )}
+                            
+                            {/* 수정 버튼 (관리자만) */}
+                            {isAdmin && (
+                              <button
+                                onClick={() => router.push(`/scripts/new?mode=edit&id=${script.id}`)}
+                                className="inline-flex items-center px-3 py-1 bg-purple-600 text-white text-xs font-medium rounded hover:bg-purple-700 transition-colors"
+                              >
+                                <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                                수정
+                              </button>
+                            )}
+                            
+                            <button 
+                              onClick={() => router.push(`/scripts/new?mode=view&id=${script.id}`)}
+                              className="inline-flex items-center px-3 py-1 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700 transition-colors"
+                            >
+                              상세보기
+                            </button>
+                            
+                            <button 
+                              onClick={() => handleCopyScript(script)}
+                              className="inline-flex items-center px-3 py-1 bg-gray-600 text-white text-xs font-medium rounded hover:bg-gray-700 transition-colors"
+                            >
+                              복사
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -861,44 +707,44 @@ export default function ScriptsPage() {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
                           </svg>
                         </button>
-                  <button
-                    onClick={() => handlePageChange(pagination.page - 1)}
-                    disabled={!pagination.hasPrev}
+                        <button
+                          onClick={() => handlePageChange(pagination.page - 1)}
+                          disabled={!pagination.hasPrev}
                           className={`p-2 rounded-lg transition-all duration-200 ${
                             !pagination.hasPrev
                               ? 'text-gray-300 cursor-not-allowed'
                               : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50 hover:shadow-md'
-                    }`}
+                          }`}
                           title="이전 페이지"
                         >
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
                           </svg>
-                  </button>
+                        </button>
                       </div>
 
                       {/* 페이지 번호들 */}
                       <div className="flex items-center space-x-1">
                         {getPageRange().map((pageNum) => (
-                    <button
-                      key={pageNum}
-                      onClick={() => handlePageChange(pageNum)}
+                          <button
+                            key={pageNum}
+                            onClick={() => handlePageChange(pageNum)}
                             className={`min-w-[40px] h-10 px-3 rounded-lg font-medium transition-all duration-200 ${
-                        pageNum === pagination.page
+                              pageNum === pagination.page
                                 ? 'bg-blue-600 text-white shadow-md'
                                 : 'text-gray-700 hover:text-blue-600 hover:bg-blue-50'
-                      }`}
-                    >
-                      {pageNum}
-                    </button>
-                  ))}
+                            }`}
+                          >
+                            {pageNum}
+                          </button>
+                        ))}
                       </div>
 
                       {/* 다음/마지막 버튼 */}
                       <div className="flex items-center space-x-1">
-                  <button
-                    onClick={() => handlePageChange(pagination.page + 1)}
-                    disabled={!pagination.hasNext}
+                        <button
+                          onClick={() => handlePageChange(pagination.page + 1)}
+                          disabled={!pagination.hasNext}
                           className={`p-2 rounded-lg transition-all duration-200 ${
                             !pagination.hasNext
                               ? 'text-gray-300 cursor-not-allowed'
@@ -923,7 +769,7 @@ export default function ScriptsPage() {
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
                           </svg>
-                  </button>
+                        </button>
                       </div>
                     </div>
                   )}
@@ -997,22 +843,27 @@ export default function ScriptsPage() {
               <button
                 onClick={closeCopyModal}
                 disabled={isCopying}
-                className="flex-1 px-4 py-3 text-sm font-bold text-gray-600 bg-gradient-to-r from-gray-50 to-gray-100 border-2 border-gray-200 rounded-xl hover:from-gray-100 hover:to-gray-200 hover:border-gray-300 hover:text-gray-700 transition-all duration-200 transform hover:scale-105 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:transform-none"
+                className="flex-1 px-4 py-3 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50"
               >
                 취소
               </button>
               <button
                 onClick={executeCopyScript}
                 disabled={isCopying || !copyScriptName.trim()}
-                className="flex-1 px-4 py-3 text-sm font-bold text-white bg-gradient-to-r from-purple-500 to-pink-600 border-2 border-purple-500 rounded-xl hover:from-purple-600 hover:to-pink-700 hover:border-purple-600 transition-all duration-200 transform hover:scale-105 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:transform-none"
+                className="flex-1 px-4 py-3 bg-gradient-to-r from-purple-500 to-pink-600 text-white rounded-lg hover:from-purple-600 hover:to-pink-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
               >
                 {isCopying ? (
-                  <div className="flex items-center justify-center">
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    복사 중...
-                  </div>
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <span>복사 중...</span>
+                  </>
                 ) : (
-                  '📋 복사하기'
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                    </svg>
+                    <span>복사하기</span>
+                  </>
                 )}
               </button>
             </div>

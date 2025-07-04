@@ -639,12 +639,12 @@ export default function ChannelsPage() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                           <div className="flex items-center space-x-2">
-                            <button className="text-blue-600 hover:text-blue-900 transition-colors">설정</button>
-                            <button className="text-green-600 hover:text-green-900 transition-colors">테스트</button>
+                            <button className="inline-flex items-center px-3 py-1 bg-gray-600 text-white text-xs font-medium rounded hover:bg-gray-700 transition-colors">설정</button>
+                            <button className="inline-flex items-center px-3 py-1 bg-orange-600 text-white text-xs font-medium rounded hover:bg-orange-700 transition-colors">테스트</button>
                             {channel.status === 'active' ? (
-                              <button className="text-yellow-600 hover:text-yellow-900 transition-colors">비활성화</button>
+                              <button className="inline-flex items-center px-3 py-1 bg-gray-600 text-white text-xs font-medium rounded hover:bg-gray-700 transition-colors">비활성화</button>
                             ) : (
-                              <button className="text-green-600 hover:text-green-900 transition-colors">활성화</button>
+                              <button className="inline-flex items-center px-3 py-1 bg-green-600 text-white text-xs font-medium rounded hover:bg-green-700 transition-colors">활성화</button>
                             )}
                           </div>
                         </td>

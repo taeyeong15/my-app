@@ -560,8 +560,8 @@ export default function NoticesPage() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                           <div className="flex items-center space-x-2">
-                            <button className="text-blue-600 hover:text-blue-900 transition-colors">수정</button>
-                            <button className="text-red-600 hover:text-red-900 transition-colors">삭제</button>
+                            <button className="inline-flex items-center px-3 py-1 bg-purple-600 text-white text-xs font-medium rounded hover:bg-purple-700 transition-colors">수정</button>
+                            <button className="inline-flex items-center px-3 py-1 bg-red-600 text-white text-xs font-medium rounded hover:bg-red-700 transition-colors">삭제</button>
                           </div>
                         </td>
                       </tr>

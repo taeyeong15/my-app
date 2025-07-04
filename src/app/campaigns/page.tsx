@@ -144,11 +144,11 @@ export default function CampaignsPage() {
       const channelOptionsData = await channelOptionsRes.json();
 
       if (statusCodesRes.ok) {
-        setStatusCodes(statusCodesData.codes || []);
+        setStatusCodes(statusCodesData.data || []);
       }
       
       if (typeCodesRes.ok) {
-        setTypeCodes(typeCodesData.codes || []);
+        setTypeCodes(typeCodesData.data || []);
       }
 
       if (channelOptionsRes.ok) {
